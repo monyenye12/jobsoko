@@ -15,7 +15,7 @@ import { useNavigate, Link } from "react-router-dom";
 import AuthLayout from "./AuthLayout";
 import { useToast } from "@/components/ui/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Phone, MapPin, Briefcase } from "lucide-react";
+import { Phone, MapPin, Briefcase, Loader2 } from "lucide-react";
 import { supabase } from "../../../supabase/supabase";
 
 const jobCategories = [
@@ -45,6 +45,7 @@ export default function SignUpForm() {
   const [businessType, setBusinessType] = useState("");
   const [error, setError] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
   const { signUp } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -56,8 +57,23 @@ export default function SignUpForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
+
+    // Basic validation
+    if (!fullName || !email || !password || !phone) {
+      setError("Please fill in all required fields");
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters long");
+      setLoading(false);
+      return;
+    }
 
     try {
+      console.log("Form submitted, preparing user data");
       const userData = {
         fullName,
         role: userRole,
@@ -69,7 +85,28 @@ export default function SignUpForm() {
         businessType,
       };
 
-      await signUp(email, password, userData);
+      // Store user role in localStorage temporarily
+      localStorage.setItem("userRole", userRole);
+      console.log("User role stored temporarily:", userRole);
+
+      console.log("Calling signUp function with data", { email, userRole });
+      try {
+        await signUp(email, password, userData);
+      } catch (signupError: any) {
+        console.error("Detailed signup error:", signupError);
+        // If there's a specific database error, provide a clearer message
+        if (
+          signupError.message &&
+          signupError.message.includes("business_name")
+        ) {
+          throw new Error(
+            "There was an issue with the business information. Please try again later.",
+          );
+        }
+        throw signupError;
+      }
+
+      console.log("Signup successful, setting submitted state");
       setIsSubmitted(true);
       toast({
         title: "Account created successfully!",
@@ -78,6 +115,13 @@ export default function SignUpForm() {
     } catch (error: any) {
       console.error("Signup error:", error);
       setError(error.message || "An error occurred during signup");
+      toast({
+        title: "Signup failed",
+        description: error.message || "An error occurred during signup",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -92,16 +136,15 @@ export default function SignUpForm() {
           <div className="text-center">
             <div className="flex justify-center mb-4">
               <div className="h-16 w-16 bg-green-100 rounded-full flex items-center justify-center">
-                <span className="text-3xl">✉️</span>
+                <span className="text-3xl">🎉</span>
               </div>
             </div>
-            <h2 className="text-2xl font-semibold mb-2">Verify Your Email</h2>
+            <h2 className="text-2xl font-semibold mb-2">Congratulations!</h2>
             <p className="text-gray-600 mb-2">
-              Please check your email inbox for a verification link from
-              JobSoko.
+              You have successfully signed up for JobSoko.
             </p>
             <p className="text-sm text-blue-600">
-              Click the link in the email to verify your account and continue.
+              Please check your email to verify your account before logging in.
             </p>
           </div>
 
@@ -110,9 +153,9 @@ export default function SignUpForm() {
           <Button
             type="button"
             onClick={() => navigate("/login")}
-            className="w-full h-12 rounded-full bg-green-600 text-white hover:bg-green-700 text-sm font-medium"
+            className="w-full h-12 rounded-full bg-green-600 text-white hover:bg-green-700 text-sm font-medium mt-4"
           >
-            Continue to Login
+            Go to Login Page
           </Button>
 
           <div className="text-center mt-4">
@@ -152,16 +195,6 @@ export default function SignUpForm() {
               className="text-sm text-green-600 hover:underline font-medium"
             >
               Resend verification email
-            </button>
-          </div>
-
-          <div className="text-center mt-2">
-            <button
-              type="button"
-              onClick={handleBackToSignup}
-              className="text-sm text-green-600 hover:underline"
-            >
-              Back to signup
             </button>
           </div>
         </div>
@@ -416,17 +449,31 @@ export default function SignUpForm() {
           <Button
             type="submit"
             className="w-full h-12 rounded-full bg-green-600 text-white hover:bg-green-700 text-sm font-medium"
+            disabled={loading}
           >
-            Continue
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              "Continue"
+            )}
           </Button>
 
           <div className="text-xs text-center text-gray-500 mt-6">
             By creating an account, you agree to our{" "}
-            <Link to="/" className="text-green-600 hover:underline">
+            <Link
+              to="/terms-of-service"
+              className="text-green-600 hover:underline"
+            >
               Terms of Service
             </Link>{" "}
             and{" "}
-            <Link to="/" className="text-green-600 hover:underline">
+            <Link
+              to="/privacy-policy"
+              className="text-green-600 hover:underline"
+            >
               Privacy Policy
             </Link>
           </div>

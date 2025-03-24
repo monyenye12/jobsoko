@@ -71,80 +71,157 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq("id", userId)
         .single();
 
-      if (error) throw error;
-
-      if (data) {
-        setUserProfile({
-          role: data.role || "job_seeker",
-          fullName: data.full_name || "",
-          phone: data.phone || "",
-          location: data.location || "",
-          skills: data.skills || [],
-          preferredCategory: data.preferred_category || "",
-          businessName: data.business_name || "",
-          businessType: data.business_type || "",
-          avatar: data.avatar_url || "",
-          rating: data.rating || 0,
-          verified: data.verified || false,
-        });
+      if (error) {
+        console.error("Error fetching user profile:", error);
+        setLoading(false);
+        return;
       }
+
+      if (!data) {
+        console.error("No user data found for ID:", userId);
+        setLoading(false);
+        return;
+      }
+
+      // Always use the role from the database, ignore localStorage
+      const userRole = data.role || "job_seeker";
+
+      // Clear any stored role to prevent conflicts
+      localStorage.removeItem("userRole");
+
+      setUserProfile({
+        role: userRole,
+        fullName: data.full_name || "",
+        phone: data.phone || "",
+        location: data.location || "",
+        skills: data.skills || [],
+        preferredCategory: data.preferred_category || "",
+        businessName: data.business_name || "",
+        businessType: data.business_type || "",
+        avatar: data.avatar_url || "",
+        rating: data.rating || 0,
+        verified: data.verified || false,
+      });
+
+      console.log("User profile set with role from database:", userRole);
     } catch (error) {
-      console.error("Error fetching user profile:", error);
+      console.error("Error in fetchUserProfile:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const signUp = async (email: string, password: string, userData: any) => {
-    const { error, data } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: userData.fullName,
-          role: userData.role,
+    console.log("Starting signup process with data:", { email, userData });
+
+    try {
+      const { error, data } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: userData.fullName,
+            role: userData.role,
+          },
+          emailRedirectTo: `${window.location.origin}/login?verified=true`,
         },
-        emailRedirectTo: `${window.location.origin}/login?verified=true`,
-      },
-    });
+      });
 
-    if (error) throw error;
+      if (error) {
+        console.error("Auth signup error:", error);
+        throw error;
+      }
 
-    if (data.user) {
-      // Create user profile in the users table
-      const { error: profileError } = await supabase.from("users").insert([
-        {
-          id: data.user.id,
-          email: email,
-          full_name: userData.fullName,
-          role: userData.role,
-          phone: userData.phone || null,
-          location: userData.location || null,
-          skills: userData.skills || null,
-          preferred_category: userData.preferredCategory || null,
-          business_name: userData.businessName || null,
-          business_type: userData.businessType || null,
-          created_at: new Date().toISOString(),
-          verified: false,
-          rating: 0,
-        },
-      ]);
+      console.log("Auth signup successful, user data:", data);
 
-      if (profileError) throw profileError;
+      if (data.user) {
+        try {
+          // Create user profile in the users table with only essential fields
+          console.log("Creating user profile in database");
+          const { error: profileError } = await supabase.from("users").insert([
+            {
+              id: data.user.id,
+              email: email,
+              full_name: userData.fullName,
+              role: userData.role,
+              phone: userData.phone || null,
+              location: userData.location || null,
+              created_at: new Date().toISOString(),
+              verified: false,
+              rating: 0,
+            },
+          ]);
+
+          if (profileError) {
+            console.error("Error creating user profile:", profileError);
+            throw new Error(
+              `Failed to create user profile: ${profileError.message}`,
+            );
+          }
+
+          // After successful profile creation, update with additional fields if needed
+          if (
+            userData.role === "job_seeker" &&
+            (userData.skills || userData.preferredCategory)
+          ) {
+            await supabase
+              .from("users")
+              .update({
+                skills: userData.skills || null,
+                preferred_category: userData.preferredCategory || null,
+              })
+              .eq("id", data.user.id);
+          } else if (
+            userData.role === "employer" &&
+            (userData.businessName || userData.businessType)
+          ) {
+            await supabase
+              .from("users")
+              .update({
+                business_name: userData.businessName || null,
+                business_type: userData.businessType || null,
+              })
+              .eq("id", data.user.id);
+          }
+
+          console.log("User profile created successfully");
+        } catch (err: any) {
+          console.error("Error in profile creation:", err);
+          throw new Error(`Profile creation failed: ${err.message}`);
+        }
+      } else {
+        console.error("No user data returned from signup");
+        throw new Error("Signup failed: No user data returned");
+      }
+    } catch (err: any) {
+      console.error("Error in signup process:", err);
+      throw err;
     }
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error, data } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     if (error) throw error;
+
+    // Fetch user profile immediately after sign in to ensure role is set correctly
+    if (data.user) {
+      await fetchUserProfile(data.user.id);
+    }
   };
 
   const signOut = async () => {
+    // Clear any stored role before signing out
+    localStorage.removeItem("userRole");
+
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+
+    // Clear user profile state
+    setUserProfile(null);
+    setUser(null);
   };
 
   const updateProfile = async (data: Partial<UserProfile>) => {
@@ -196,8 +273,8 @@ export function useAuth() {
   return context;
 }
 
-// Add the PrivateRoute component
-export function PrivateRoute({ children }: { children: React.ReactNode }) {
+// Separate component definition from export to fix HMR issues
+const PrivateRouteComponent = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
 
   // Show loading screen while checking authentication
@@ -216,4 +293,7 @@ export function PrivateRoute({ children }: { children: React.ReactNode }) {
 
   // Render children if authenticated
   return <>{children}</>;
-}
+};
+
+// Export the component separately to ensure consistent exports
+export const PrivateRoute = PrivateRouteComponent;

@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT,
   full_name TEXT,
   phone TEXT,
-  role TEXT NOT NULL DEFAULT 'job_seeker',
+  role TEXT DEFAULT 'job_seeker',
   location TEXT,
   skills TEXT[],
   preferred_category TEXT,

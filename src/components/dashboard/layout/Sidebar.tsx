@@ -50,7 +50,11 @@ const Sidebar = ({
       label: "Dashboard",
       href: "/dashboard",
     },
-    { icon: <Briefcase size={20} />, label: "Manage Jobs", href: "/dashboard" },
+    {
+      icon: <Briefcase size={20} />,
+      label: "Manage Jobs",
+      href: "/dashboard/manage-jobs",
+    },
     { icon: <PlusCircle size={20} />, label: "Post Job", href: "/post-job" },
     {
       icon: <Users size={20} />,
@@ -65,9 +69,13 @@ const Sidebar = ({
     {
       icon: <MessageSquare size={20} />,
       label: "Messages",
-      href: "/dashboard",
+      href: "/dashboard/messages",
     },
-    { icon: <Calendar size={20} />, label: "Calendar", href: "/dashboard" },
+    {
+      icon: <Calendar size={20} />,
+      label: "Calendar",
+      href: "/dashboard/calendar",
+    },
   ];
 
   const jobSeekerNavItems: NavItem[] = [
@@ -84,20 +92,36 @@ const Sidebar = ({
     {
       icon: <Briefcase size={20} />,
       label: "My Applications",
-      href: "/dashboard",
+      href: "/dashboard/my-applications",
     },
-    { icon: <Star size={20} />, label: "Saved Jobs", href: "/dashboard" },
+    {
+      icon: <Star size={20} />,
+      label: "Saved Jobs",
+      href: "/dashboard/saved-jobs",
+    },
     {
       icon: <MessageSquare size={20} />,
       label: "Messages",
-      href: "/dashboard",
+      href: "/dashboard/messages",
     },
-    { icon: <FileText size={20} />, label: "My Resume", href: "/dashboard" },
-    { icon: <Calendar size={20} />, label: "Calendar", href: "/dashboard" },
+    {
+      icon: <FileText size={20} />,
+      label: "My Resume",
+      href: "/dashboard/resume",
+    },
+    {
+      icon: <Calendar size={20} />,
+      label: "Calendar",
+      href: "/dashboard/calendar",
+    },
   ];
 
   const bottomItems: NavItem[] = [
-    { icon: <Bell size={20} />, label: "Notifications", href: "/dashboard" },
+    {
+      icon: <Bell size={20} />,
+      label: "Notifications",
+      href: "/dashboard/notifications",
+    },
     {
       icon: <DollarSign size={20} />,
       label: "Payments",
@@ -109,7 +133,11 @@ const Sidebar = ({
       label: "Support",
       href: "/dashboard/support",
     },
-    { icon: <Settings size={20} />, label: "Settings", href: "/dashboard" },
+    {
+      icon: <Settings size={20} />,
+      label: "Settings",
+      href: "/dashboard/profile",
+    },
   ];
 
   const navItems = isEmployer ? employerNavItems : jobSeekerNavItems;
@@ -121,8 +149,35 @@ const Sidebar = ({
 
   const handleItemClick = (item: NavItem) => {
     onItemClick(item.label);
-    if (item.href) {
-      navigate(item.href);
+
+    // Map labels to correct routes
+    let route = item.href;
+    switch (item.label) {
+      case "My Applications":
+        route = "/dashboard/my-applications";
+        break;
+      case "Saved Jobs":
+        route = "/dashboard/saved-jobs";
+        break;
+      case "Messages":
+        route = "/dashboard/messages";
+        break;
+      case "My Resume":
+        route = "/dashboard/resume";
+        break;
+      case "Calendar":
+        route = "/dashboard/calendar";
+        break;
+      case "Notifications":
+        route = "/dashboard/notifications";
+        break;
+      case "Settings":
+        route = "/dashboard/profile";
+        break;
+    }
+
+    if (route) {
+      navigate(route);
     }
   };
 

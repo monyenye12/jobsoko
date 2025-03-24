@@ -50,6 +50,7 @@ export default function LoginForm() {
         title: "Login successful",
         description: "Welcome back to JobSoko!",
       });
+      // Navigate to dashboard after successful login
       navigate("/dashboard");
     } catch (error: any) {
       console.error("Login error:", error);

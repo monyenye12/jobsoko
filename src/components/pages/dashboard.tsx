@@ -25,8 +25,10 @@ const Dashboard = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Set active tab based on URL path
+    // Set active tab based on URL path and user role
     const path = location.pathname;
+    const isEmployerUser = userProfile?.role === "employer";
+
     if (path.includes("/applicants")) {
       setActiveTab("applicants");
       setActiveSidebarItem("Applicants");
@@ -37,13 +39,19 @@ const Dashboard = () => {
       setActiveTab("support");
       setActiveSidebarItem("Support");
     } else if (path.includes("/map-jobs")) {
-      setActiveTab("map-jobs");
-      setActiveSidebarItem("Find Jobs");
+      // Only job seekers should see map-jobs tab
+      if (!isEmployerUser) {
+        setActiveTab("map-jobs");
+        setActiveSidebarItem("Find Jobs");
+      } else {
+        setActiveTab("dashboard");
+        setActiveSidebarItem("Dashboard");
+      }
     } else {
       setActiveTab("dashboard");
       setActiveSidebarItem("Dashboard");
     }
-  }, [location]);
+  }, [location, userProfile]); // Added userProfile as dependency
 
   // Function to trigger loading state for demonstration
   const handleRefresh = () => {
