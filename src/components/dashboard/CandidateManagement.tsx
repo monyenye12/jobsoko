@@ -197,10 +197,11 @@ export default function CandidateManagement() {
     return 0;
   });
 
-  const updateCandidateStatus = (
+  const updateCandidateStatus = async (
     candidateId: string,
     newStatus: "pending" | "shortlisted" | "interview" | "hired" | "rejected",
   ) => {
+    // First update the UI for immediate feedback
     setCandidates((prev) =>
       prev.map((candidate) =>
         candidate.id === candidateId
@@ -209,10 +210,44 @@ export default function CandidateManagement() {
       ),
     );
 
-    toast({
-      title: "Status Updated",
-      description: `Candidate status has been updated to ${newStatus}`,
-    });
+    try {
+      // Then update in the database
+      const candidate = candidates.find((c) => c.id === candidateId);
+      if (candidate) {
+        // Update the application status in the database
+        const { error } = await supabase
+          .from("applications")
+          .update({ status: newStatus })
+          .eq("id", candidate.id);
+
+        if (error) throw error;
+
+        // Create a notification for the applicant
+        await supabase.from("notifications").insert([
+          {
+            user_id: candidateId,
+            title: "Application Status Updated",
+            message: `Your application for ${candidate.appliedFor} has been ${newStatus}`,
+            type: "application_update",
+            read: false,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+
+      toast({
+        title: "Status Updated",
+        description: `Candidate status has been updated to ${newStatus}`,
+        variant: "success",
+      });
+    } catch (error) {
+      console.error("Error updating application status:", error);
+      toast({
+        title: "Update Failed",
+        description: "There was an error updating the application status",
+        variant: "destructive",
+      });
+    }
   };
 
   const sendMessage = () => {

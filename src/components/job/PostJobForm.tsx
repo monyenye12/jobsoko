@@ -66,45 +66,144 @@ export default function PostJobForm() {
       return;
     }
 
+    // Validate required fields
+    if (!title || !description || !company || !location || !type || !category) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate deadline is required and in the future
+    if (!deadline) {
+      toast({
+        title: "Deadline Required",
+        description: "Please set an application deadline for your job posting",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const deadlineDate = new Date(deadline);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (deadlineDate < today) {
+      toast({
+        title: "Invalid Deadline",
+        description: "The deadline must be in the future",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.from("jobs").insert([
-        {
-          title,
-          description,
-          company,
-          location,
-          type,
-          category,
-          salary,
-          skills: skills.split(",").map((skill) => skill.trim()),
-          deadline,
-          urgent,
-          employer_id: user.id,
-          status: "active",
-          created_at: new Date().toISOString(),
+      // Process skills - trim and filter out empty entries
+      const processedSkills = skills
+        .split(",")
+        .map((skill) => skill.trim())
+        .filter((skill) => skill.length > 0);
+
+      // Prepare the job data
+      const jobData = {
+        title,
+        description,
+        company,
+        location,
+        type,
+        category,
+        salary,
+        skills: processedSkills,
+        deadline,
+        urgent,
+        employer_id: user.id,
+        status: "active",
+        created_at: new Date().toISOString(),
+        // Add salary min/max for better filtering
+        salary_min: extractSalaryMin(salary),
+        salary_max: extractSalaryMax(salary),
+        payment_frequency: extractPaymentFrequency(salary),
+        // Add coordinates for map view if available
+        // This would typically come from a geocoding service
+        // For now, we'll use placeholder values
+        coordinates: {
+          latitude: 0,
+          longitude: 0,
         },
-      ]);
+      };
+
+      // Insert the job into the database
+      const { data, error } = await supabase
+        .from("jobs")
+        .insert([jobData])
+        .select();
 
       if (error) throw error;
 
+      // Send notifications to matching users
+      try {
+        // Import the notification function
+        const { notifyMatchingUsers } = await import(
+          "../job/JobPostingTrigger"
+        );
+        const notificationResult = await notifyMatchingUsers(data[0].id);
+        console.log("Notification result:", notificationResult);
+      } catch (notificationError) {
+        console.error("Error sending notifications:", notificationError);
+      }
+
       toast({
         title: "Success",
-        description: "Job posted successfully",
+        description:
+          "Job posted successfully! You can now manage it from your dashboard.",
+        variant: "success",
       });
 
-      navigate("/dashboard");
-    } catch (error) {
+      // Clear form fields
+      setTitle("");
+      setDescription("");
+      setSalary("");
+      setSkills("");
+      setDeadline("");
+      setUrgent(false);
+
+      // Navigate to manage jobs page after a short delay to allow the user to see the success message
+      setTimeout(() => {
+        navigate("/dashboard/manage-jobs");
+      }, 1500);
+    } catch (error: any) {
       console.error("Error posting job:", error);
       toast({
         title: "Error",
-        description: "Failed to post job. Please try again.",
+        description: error.message || "Failed to post job. Please try again.",
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
+  };
+
+  // Helper functions to extract salary information
+  const extractSalaryMin = (salaryText: string): number | null => {
+    const numbers = salaryText.match(/\d+/g)?.map(Number) || [];
+    return numbers.length > 0 ? Math.min(...numbers) : null;
+  };
+
+  const extractSalaryMax = (salaryText: string): number | null => {
+    const numbers = salaryText.match(/\d+/g)?.map(Number) || [];
+    return numbers.length > 1 ? Math.max(...numbers) : null;
+  };
+
+  const extractPaymentFrequency = (salaryText: string): string => {
+    if (salaryText.toLowerCase().includes("/day")) return "Daily";
+    if (salaryText.toLowerCase().includes("/week")) return "Weekly";
+    if (salaryText.toLowerCase().includes("/month")) return "Monthly";
+    if (salaryText.toLowerCase().includes("/year")) return "Yearly";
+    return "Monthly"; // Default
   };
 
   return (
@@ -234,15 +333,20 @@ export default function PostJobForm() {
             <div>
               <Label htmlFor="deadline" className="text-base flex items-center">
                 <Calendar className="h-4 w-4 mr-1 text-gray-500" />
-                Application Deadline
+                Application Deadline <span className="text-red-500">*</span>
               </Label>
               <Input
                 id="deadline"
                 type="date"
                 value={deadline}
                 onChange={(e) => setDeadline(e.target.value)}
+                required
                 className="h-12 mt-1"
+                min={new Date().toISOString().split("T")[0]} // Set minimum date to today
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Jobs will be automatically removed after the deadline passes
+              </p>
             </div>
           </div>
 

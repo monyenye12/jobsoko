@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useJobPostingNotification } from "./JobPostingTrigger";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -217,392 +218,234 @@ export default function EnhancedPostJobForm() {
       return;
     }
 
+    // Validate deadline is required and in the future
+    if (!deadline) {
+      toast({
+        title: "Deadline Required",
+        description: "Please set an application deadline for your job posting",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const deadlineDate = new Date(deadline);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (deadlineDate < today) {
+      toast({
+        title: "Invalid Deadline",
+        description: "The deadline must be in the future",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.from("jobs").insert([
-        {
-          title,
-          category,
-          type,
-          description,
-          skills: selectedSkills,
-          positions: parseInt(positions),
-          salary_min: parseInt(salaryMin),
-          salary_max: salaryMax ? parseInt(salaryMax) : null,
-          salary_type: salaryType,
-          payment_frequency: paymentFrequency,
-          payment_method: paymentMethod,
-          benefits: selectedBenefits,
-          location,
-          work_hours: workHours,
-          is_remote: isRemote,
-          deadline,
-          application_methods: selectedApplicationMethods,
-          contact_person: contactPerson,
-          contact_phone: contactPhone,
-          visibility,
-          allow_messages: allowMessages,
-          enable_notifications: enableNotifications,
-          employer_id: user.id,
-          status: "active",
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      // Generate random coordinates for Nairobi area if not provided
+      // This ensures the job shows up on the map
+      const latitude = -1.28 + (Math.random() * 0.1 - 0.05); // Around Nairobi
+      const longitude = 36.82 + (Math.random() * 0.1 - 0.05); // Around Nairobi
 
-      if (error) throw error;
+      // Prepare the job data
+      const jobData = {
+        title,
+        category,
+        type,
+        description,
+        skills: selectedSkills,
+        positions: parseInt(positions),
+        salary_min: parseInt(salaryMin),
+        salary_max: salaryMax ? parseInt(salaryMax) : null,
+        salary_type: salaryType,
+        payment_frequency: paymentFrequency || "Monthly", // Ensure default value
+        payment_method: paymentMethod || "Bank Transfer", // Ensure default value
+        benefits: selectedBenefits || [],
+        location,
+        work_hours: workHours,
+        is_remote: isRemote,
+        deadline,
+        application_methods: selectedApplicationMethods || [
+          "Apply Directly via JobSoko",
+        ],
+        contact_person: contactPerson,
+        contact_phone: contactPhone,
+        visibility: visibility || "Public",
+        allow_messages: allowMessages,
+        enable_notifications: enableNotifications,
+        employer_id: user.id,
+        status: "active",
+        created_at: new Date().toISOString(),
+        // For compatibility with the job seeker dashboard
+        company: userProfile?.businessName || userProfile?.full_name || "",
+        urgent: false, // Fixed the undefined value
+        latitude,
+        longitude,
+      };
 
+      // Insert the job into the database
+      // First check if the payment_frequency column exists
+      try {
+        await supabase.rpc("ensure_payment_frequency_column");
+      } catch (rpcError) {
+        console.log("RPC not available, continuing with insert", rpcError);
+        // If RPC fails, we'll try to ensure the column exists directly
+        try {
+          // This is a fallback approach if the RPC is not available
+          const { error: columnCheckError } = await supabase
+            .from("jobs")
+            .select("payment_frequency")
+            .limit(1);
+
+          if (columnCheckError) {
+            console.log(
+              "Column check failed, job might not have payment_frequency column",
+              columnCheckError,
+            );
+            // We'll continue anyway and let the insert handle any errors
+          }
+        } catch (directCheckError) {
+          console.log("Direct column check failed", directCheckError);
+        }
+      }
+
+      const { data, error } = await supabase
+        .from("jobs")
+        .insert([jobData])
+        .select();
+
+      if (error) {
+        console.error("Error posting job:", error);
+        toast({
+          title: "Error",
+          description: "Failed to post job. Please try again.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
+      // Success! Send notifications and navigate to success page
       toast({
         title: "Success",
-        description: "Job posted successfully",
+        description: "Your job has been posted successfully!",
       });
 
-      // Show payment options
-      setShowPayment(true);
+      // Send notifications to matching job seekers
+      try {
+        const { notifyMatchingUsers } = useJobPostingNotification();
+        await notifyMatchingUsers(data[0].id);
+      } catch (notifyError) {
+        console.error("Error sending notifications:", notifyError);
+      }
+
+      // Navigate to dashboard instead of success page
+      navigate("/dashboard", {
+        state: { message: "Job posted successfully!" },
+      });
     } catch (error) {
       console.error("Error posting job:", error);
       toast({
         title: "Error",
-        description: "Failed to post job. Please try again.",
+        description: "An unexpected error occurred. Please try again.",
         variant: "destructive",
       });
+    } finally {
       setLoading(false);
     }
   };
 
-  const handlePaymentComplete = (plan: string) => {
-    toast({
-      title: "Payment Successful",
-      description: `Your job has been posted with the ${plan} plan.`,
-    });
-    navigate("/dashboard");
-  };
-
-  if (showPayment) {
-    return (
-      <div className="max-w-4xl mx-auto p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl font-bold">
-              Choose Your Plan
-            </CardTitle>
-            <CardDescription>
-              Select a plan to boost your job posting visibility
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="border-2 border-gray-200">
-                <CardHeader>
-                  <CardTitle className="text-xl">Free Plan</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-3xl font-bold mb-6">
-                    KSh 0{" "}
-                    <span className="text-sm font-normal text-gray-500">
-                      /job post
-                    </span>
-                  </p>
-                  <ul className="space-y-2">
-                    <li className="flex items-start">
-                      <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-                      <span>Standard visibility</span>
-                    </li>
-                    <li className="flex items-start">
-                      <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-                      <span>Basic applicant filtering</span>
-                    </li>
-                    <li className="flex items-start">
-                      <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-                      <span>Up to 3 job posts per month</span>
-                    </li>
-                  </ul>
-                </CardContent>
-                <CardFooter>
-                  <Button
-                    onClick={() => handlePaymentComplete("Free")}
-                    className="w-full"
-                  >
-                    Select Free Plan
-                  </Button>
-                </CardFooter>
-              </Card>
-
-              <Card className="border-2 border-blue-500 relative">
-                <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs font-medium px-3 py-1 rounded-bl-lg">
-                  RECOMMENDED
+  // Render the form based on the current step
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 1:
+        return (
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">Basic Job Details</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="title">Job Title *</Label>
+                  <Input
+                    id="title"
+                    placeholder="e.g. Construction Worker, Delivery Driver"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                  />
                 </div>
-                <CardHeader>
-                  <CardTitle className="text-xl">Premium Plan</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-3xl font-bold mb-6">
-                    KSh 1,500{" "}
-                    <span className="text-sm font-normal text-gray-500">
-                      /job post
-                    </span>
-                  </p>
-                  <ul className="space-y-2">
-                    <li className="flex items-start">
-                      <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-                      <span>Featured job listing</span>
-                    </li>
-                    <li className="flex items-start">
-                      <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-                      <span>Priority visibility</span>
-                    </li>
-                    <li className="flex items-start">
-                      <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-                      <span>Advanced candidate filtering</span>
-                    </li>
-                    <li className="flex items-start">
-                      <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-                      <span>Verified employer badge</span>
-                    </li>
-                  </ul>
-                </CardContent>
-                <CardFooter>
-                  <Button
-                    onClick={() => handlePaymentComplete("Premium")}
-                    className="w-full bg-blue-600 hover:bg-blue-700"
+
+                <div className="space-y-2">
+                  <Label htmlFor="category">Job Category *</Label>
+                  <Select
+                    value={category}
+                    onValueChange={(value) => setCategory(value)}
                   >
-                    Pay KSh 1,500
-                  </Button>
-                </CardFooter>
-              </Card>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+                    <SelectTrigger id="category">
+                      <SelectValue placeholder="Select a category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {jobCategories.map((cat) => (
+                        <SelectItem key={cat.name} value={cat.name}>
+                          {cat.icon} {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-  if (showPreview) {
-    return (
-      <div className="max-w-4xl mx-auto p-6">
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <div>
-                <CardTitle className="text-2xl font-bold">{title}</CardTitle>
-                <CardDescription>
-                  {category} • {type} • {location}
-                </CardDescription>
-              </div>
-              <Button variant="outline" onClick={() => setShowPreview(false)}>
-                Edit Job
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold mb-2">Job Description</h3>
-              <p className="whitespace-pre-line">{description}</p>
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="type">Job Type *</Label>
+                  <Select
+                    value={type}
+                    onValueChange={(value) => setType(value)}
+                  >
+                    <SelectTrigger id="type">
+                      <SelectValue placeholder="Select job type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {jobTypes.map((jobType) => (
+                        <SelectItem key={jobType} value={jobType}>
+                          {jobType}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {selectedSkills.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Required Skills</h3>
-                <div className="flex flex-wrap gap-2">
-                  {selectedSkills.map((skill) => (
-                    <span
-                      key={skill}
-                      className="bg-gray-100 px-3 py-1 rounded-full text-sm"
-                    >
-                      {skill}
-                    </span>
-                  ))}
+                <div className="space-y-2">
+                  <Label htmlFor="positions">Number of Positions</Label>
+                  <Input
+                    id="positions"
+                    type="number"
+                    min="1"
+                    value={positions}
+                    onChange={(e) => setPositions(e.target.value)}
+                  />
                 </div>
               </div>
-            )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Compensation</h3>
-                <p className="flex items-center text-gray-700">
-                  <DollarSign className="h-4 w-4 mr-1 text-gray-500" />
-                  KSh {salaryMin}
-                  {salaryMax ? ` - KSh ${salaryMax}` : ""} ({salaryType},{" "}
-                  {paymentFrequency})
-                </p>
-                {selectedBenefits.length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-sm font-medium">Benefits:</p>
-                    <p className="text-sm text-gray-600">
-                      {selectedBenefits.join(", ")}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Work Details</h3>
-                <p className="flex items-center text-gray-700">
-                  <MapPin className="h-4 w-4 mr-1 text-gray-500" />
-                  {location} {isRemote && "(Remote work available)"}
-                </p>
-                <p className="flex items-center text-gray-700 mt-1">
-                  <Clock className="h-4 w-4 mr-1 text-gray-500" />
-                  {workHours}
-                </p>
-                <p className="flex items-center text-gray-700 mt-1">
-                  <Users className="h-4 w-4 mr-1 text-gray-500" />
-                  {positions} position{parseInt(positions) !== 1 ? "s" : ""}{" "}
-                  available
-                </p>
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-semibold mb-2">
-                Application Details
-              </h3>
-              <p className="flex items-center text-gray-700">
-                <Calendar className="h-4 w-4 mr-1 text-gray-500" />
-                Deadline: {new Date(deadline).toLocaleDateString()}
-              </p>
-              <div className="mt-2">
-                <p className="text-sm font-medium">How to Apply:</p>
-                <ul className="list-disc pl-5 text-sm text-gray-600">
-                  {selectedApplicationMethods.map((method) => (
-                    <li key={method}>{method}</li>
-                  ))}
-                </ul>
-              </div>
-              {contactPerson && (
-                <p className="text-sm text-gray-600 mt-2">
-                  Contact: {contactPerson}{" "}
-                  {contactPhone ? `(${contactPhone})` : ""}
-                </p>
-              )}
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button variant="outline" onClick={() => setShowPreview(false)}>
-              Back to Edit
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              className="bg-green-600 hover:bg-green-700"
-              disabled={loading}
-            >
-              {loading ? "Posting Job..." : "Post Job Now"}
-            </Button>
-          </CardFooter>
-        </Card>
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold mb-2">Post a New Job</h1>
-        <p className="text-gray-600">
-          Fill in the details below to create a new job listing
-        </p>
-      </div>
-
-      <div className="mb-8">
-        <div className="flex justify-between items-center relative">
-          {[1, 2, 3, 4, 5].map((step) => (
-            <div
-              key={step}
-              className={`flex flex-col items-center relative z-10 ${currentStep >= step ? "text-green-600" : "text-gray-400"}`}
-            >
-              <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${currentStep >= step ? "border-green-600 bg-green-50" : "border-gray-300 bg-white"}`}
-              >
-                {step}
-              </div>
-              <span className="text-xs mt-2 text-center">
-                {step === 1 && "Basic Details"}
-                {step === 2 && "Compensation"}
-                {step === 3 && "Location"}
-                {step === 4 && "Application"}
-                {step === 5 && "Preferences"}
-              </span>
-            </div>
-          ))}
-          <div className="absolute top-5 left-0 right-0 h-0.5 bg-gray-200 -z-10"></div>
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="pt-6">
-          {currentStep === 1 && (
-            <div className="space-y-6">
-              <h2 className="text-xl font-semibold">1. Basic Job Details</h2>
-
-              <div>
-                <Label htmlFor="title" className="text-base">
-                  Job Title <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="title"
-                  placeholder="e.g. House Cleaner Needed, Motorbike Delivery Rider"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  required
-                  className="h-12 mt-1"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="category" className="text-base">
-                  Job Category <span className="text-red-500">*</span>
-                </Label>
-                <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger className="h-12 mt-1">
-                    <SelectValue placeholder="Select job category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {jobCategories.map((cat) => (
-                      <SelectItem key={cat.name} value={cat.name.toLowerCase()}>
-                        {cat.icon} {cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="type" className="text-base">
-                  Job Type <span className="text-red-500">*</span>
-                </Label>
-                <Select value={type} onValueChange={setType}>
-                  <SelectTrigger className="h-12 mt-1">
-                    <SelectValue placeholder="Select job type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {jobTypes.map((jobType) => (
-                      <SelectItem key={jobType} value={jobType}>
-                        {jobType}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="description" className="text-base">
-                  Job Description <span className="text-red-500">*</span>
-                </Label>
+              <div className="space-y-2">
+                <Label htmlFor="description">Job Description *</Label>
                 <Textarea
                   id="description"
-                  placeholder="Provide detailed job responsibilities and expectations. Example: Looking for a cleaner to maintain office spaces daily. Must be available from 7 AM to 4 PM, Monday to Friday."
+                  placeholder="Describe the job responsibilities, requirements, and any other relevant details"
+                  className="min-h-[150px]"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  required
-                  className="min-h-[150px] mt-1"
                 />
               </div>
 
-              <div>
-                <Label className="text-base mb-2 block">Skills Required</Label>
+              <div className="space-y-2">
+                <Label>Required Skills</Label>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {skillsList.map((skill) => (
-                    <div key={skill} className="flex items-center space-x-2">
+                    <div
+                      key={skill}
+                      className="flex items-center space-x-2 rounded-md border p-2 cursor-pointer hover:bg-gray-50"
+                      onClick={() => handleSkillToggle(skill)}
+                    >
                       <Checkbox
                         id={`skill-${skill}`}
                         checked={selectedSkills.includes(skill)}
@@ -610,7 +453,7 @@ export default function EnhancedPostJobForm() {
                       />
                       <label
                         htmlFor={`skill-${skill}`}
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        className="text-sm cursor-pointer"
                       >
                         {skill}
                       </label>
@@ -618,56 +461,42 @@ export default function EnhancedPostJobForm() {
                   ))}
                 </div>
               </div>
-
-              <div>
-                <Label htmlFor="positions" className="text-base">
-                  Number of Positions Available
-                </Label>
-                <Input
-                  id="positions"
-                  type="number"
-                  min="1"
-                  placeholder="e.g. 3"
-                  value={positions}
-                  onChange={(e) => setPositions(e.target.value)}
-                  className="h-12 mt-1 w-full md:w-1/3"
-                />
-              </div>
             </div>
-          )}
+          </div>
+        );
 
-          {currentStep === 2 && (
-            <div className="space-y-6">
-              <h2 className="text-xl font-semibold">
-                2. Compensation & Payment Details
-              </h2>
+      case 2:
+        return (
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">Compensation & Payment</h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="salaryType" className="text-base">
-                    Salary Type <span className="text-red-500">*</span>
-                  </Label>
-                  <Select value={salaryType} onValueChange={setSalaryType}>
-                    <SelectTrigger className="h-12 mt-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="salary-type">Salary Type</Label>
+                  <Select
+                    value={salaryType}
+                    onValueChange={(value) => setSalaryType(value)}
+                  >
+                    <SelectTrigger id="salary-type">
                       <SelectValue placeholder="Select salary type" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Fixed Salary">Fixed Salary</SelectItem>
-                      <SelectItem value="Hourly Wage">Hourly Wage</SelectItem>
-                      <SelectItem value="Daily Rate">Daily Rate</SelectItem>
+                      <SelectItem value="Hourly Rate">Hourly Rate</SelectItem>
+                      <SelectItem value="Range">Salary Range</SelectItem>
+                      <SelectItem value="Negotiable">Negotiable</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                <div>
-                  <Label htmlFor="paymentFrequency" className="text-base">
-                    Payment Frequency <span className="text-red-500">*</span>
-                  </Label>
+                <div className="space-y-2">
+                  <Label htmlFor="payment-frequency">Payment Frequency *</Label>
                   <Select
                     value={paymentFrequency}
-                    onValueChange={setPaymentFrequency}
+                    onValueChange={(value) => setPaymentFrequency(value)}
                   >
-                    <SelectTrigger className="h-12 mt-1">
+                    <SelectTrigger id="payment-frequency">
                       <SelectValue placeholder="Select payment frequency" />
                     </SelectTrigger>
                     <SelectContent>
@@ -679,72 +508,66 @@ export default function EnhancedPostJobForm() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label
-                    htmlFor="salaryMin"
-                    className="text-base flex items-center"
-                  >
-                    <DollarSign className="h-4 w-4 mr-1 text-gray-500" />
-                    Minimum Salary (KSh) <span className="text-red-500">*</span>
+                <div className="space-y-2">
+                  <Label htmlFor="salary-min">
+                    {salaryType === "Hourly Rate"
+                      ? "Hourly Rate (KSh) *"
+                      : "Minimum Salary (KSh) *"}
                   </Label>
                   <Input
-                    id="salaryMin"
+                    id="salary-min"
                     type="number"
-                    placeholder="e.g. 10000"
+                    min="0"
+                    placeholder="e.g. 15000"
                     value={salaryMin}
                     onChange={(e) => setSalaryMin(e.target.value)}
-                    required
-                    className="h-12 mt-1"
                   />
                 </div>
 
-                <div>
-                  <Label
-                    htmlFor="salaryMax"
-                    className="text-base flex items-center"
+                {salaryType === "Range" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="salary-max">Maximum Salary (KSh)</Label>
+                    <Input
+                      id="salary-max"
+                      type="number"
+                      min={parseInt(salaryMin) || 0}
+                      placeholder="e.g. 25000"
+                      value={salaryMax}
+                      onChange={(e) => setSalaryMax(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="payment-method">Payment Method</Label>
+                  <Select
+                    value={paymentMethod}
+                    onValueChange={(value) => setPaymentMethod(value)}
                   >
-                    <DollarSign className="h-4 w-4 mr-1 text-gray-500" />
-                    Maximum Salary (KSh) (Optional)
-                  </Label>
-                  <Input
-                    id="salaryMax"
-                    type="number"
-                    placeholder="e.g. 15000"
-                    value={salaryMax}
-                    onChange={(e) => setSalaryMax(e.target.value)}
-                    className="h-12 mt-1"
-                  />
+                    <SelectTrigger id="payment-method">
+                      <SelectValue placeholder="Select payment method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {paymentMethods.map((method) => (
+                        <SelectItem key={method} value={method}>
+                          {method}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
-              <div>
-                <Label htmlFor="paymentMethod" className="text-base">
-                  Payment Method
-                </Label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger className="h-12 mt-1">
-                    <SelectValue placeholder="Select payment method" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {paymentMethods.map((method) => (
-                      <SelectItem key={method} value={method}>
-                        {method}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label className="text-base mb-2 block">
-                  Benefits (Optional)
-                </Label>
+              <div className="space-y-2">
+                <Label>Benefits & Perks</Label>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {benefits.map((benefit) => (
-                    <div key={benefit} className="flex items-center space-x-2">
+                    <div
+                      key={benefit}
+                      className="flex items-center space-x-2 rounded-md border p-2 cursor-pointer hover:bg-gray-50"
+                      onClick={() => handleBenefitToggle(benefit)}
+                    >
                       <Checkbox
                         id={`benefit-${benefit}`}
                         checked={selectedBenefits.includes(benefit)}
@@ -752,7 +575,7 @@ export default function EnhancedPostJobForm() {
                       />
                       <label
                         htmlFor={`benefit-${benefit}`}
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        className="text-sm cursor-pointer"
                       >
                         {benefit}
                       </label>
@@ -761,96 +584,99 @@ export default function EnhancedPostJobForm() {
                 </div>
               </div>
             </div>
-          )}
+          </div>
+        );
 
-          {currentStep === 3 && (
-            <div className="space-y-6">
+      case 3:
+        return (
+          <div className="space-y-6">
+            <div className="space-y-4">
               <h2 className="text-xl font-semibold">
-                3. Location & Work Schedule
+                Location & Work Schedule
               </h2>
 
-              <div>
-                <Label
-                  htmlFor="location"
-                  className="text-base flex items-center"
-                >
-                  <MapPin className="h-4 w-4 mr-1 text-gray-500" />
-                  Job Location <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="location"
-                  placeholder="e.g. Westlands, Nairobi"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  required
-                  className="h-12 mt-1"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Enter the specific location or area where the job will be
-                  performed
-                </p>
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="location">Job Location *</Label>
+                  <Input
+                    id="location"
+                    placeholder="e.g. Nairobi, Kenya or specific address"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                  />
+                </div>
 
-              <div>
-                <Label
-                  htmlFor="workHours"
-                  className="text-base flex items-center"
-                >
-                  <Clock className="h-4 w-4 mr-1 text-gray-500" />
-                  Work Hours / Shifts <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="workHours"
-                  placeholder="e.g. Monday-Friday, 8 AM - 5 PM"
-                  value={workHours}
-                  onChange={(e) => setWorkHours(e.target.value)}
-                  required
-                  className="h-12 mt-1"
-                />
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="work-hours">Work Hours *</Label>
+                  <Input
+                    id="work-hours"
+                    placeholder="e.g. 9 AM - 5 PM, Monday to Friday"
+                    value={workHours}
+                    onChange={(e) => setWorkHours(e.target.value)}
+                  />
+                </div>
 
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="isRemote"
-                  checked={isRemote}
-                  onCheckedChange={setIsRemote}
-                />
-                <Label htmlFor="isRemote" className="cursor-pointer">
-                  Remote Work Option
-                </Label>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="remote"
+                    checked={isRemote}
+                    onCheckedChange={setIsRemote}
+                  />
+                  <Label htmlFor="remote">This is a remote job</Label>
+                </div>
               </div>
             </div>
-          )}
+          </div>
+        );
 
-          {currentStep === 4 && (
-            <div className="space-y-6">
-              <h2 className="text-xl font-semibold">4. Application Process</h2>
+      case 4:
+        return (
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">Application Process</h2>
 
-              <div>
-                <Label
-                  htmlFor="deadline"
-                  className="text-base flex items-center"
-                >
-                  <Calendar className="h-4 w-4 mr-1 text-gray-500" />
-                  Application Deadline <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="deadline"
-                  type="date"
-                  value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
-                  required
-                  className="h-12 mt-1"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="deadline">Application Deadline *</Label>
+                  <Input
+                    id="deadline"
+                    type="date"
+                    value={deadline}
+                    onChange={(e) => setDeadline(e.target.value)}
+                    min={new Date().toISOString().split("T")[0]}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="contact-person">Contact Person</Label>
+                  <Input
+                    id="contact-person"
+                    placeholder="e.g. John Doe"
+                    value={contactPerson}
+                    onChange={(e) => setContactPerson(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="contact-phone">Contact Phone</Label>
+                  <Input
+                    id="contact-phone"
+                    placeholder="e.g. +254 712 345 678"
+                    value={contactPhone}
+                    onChange={(e) => setContactPhone(e.target.value)}
+                  />
+                </div>
               </div>
 
-              <div>
-                <Label className="text-base mb-2 block">
-                  How to Apply? <span className="text-red-500">*</span>
-                </Label>
-                <div className="space-y-2">
+              <div className="space-y-2">
+                <Label>Application Methods *</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {applicationMethods.map((method) => (
-                    <div key={method} className="flex items-center space-x-2">
+                    <div
+                      key={method}
+                      className="flex items-center space-x-2 rounded-md border p-2 cursor-pointer hover:bg-gray-50"
+                      onClick={() => handleApplicationMethodToggle(method)}
+                    >
                       <Checkbox
                         id={`method-${method}`}
                         checked={selectedApplicationMethods.includes(method)}
@@ -860,7 +686,7 @@ export default function EnhancedPostJobForm() {
                       />
                       <label
                         htmlFor={`method-${method}`}
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        className="text-sm cursor-pointer"
                       >
                         {method}
                       </label>
@@ -868,118 +694,150 @@ export default function EnhancedPostJobForm() {
                   ))}
                 </div>
               </div>
+            </div>
+          </div>
+        );
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="contactPerson" className="text-base">
-                    Contact Person (Optional)
-                  </Label>
-                  <Input
-                    id="contactPerson"
-                    placeholder="e.g. John Doe"
-                    value={contactPerson}
-                    onChange={(e) => setContactPerson(e.target.value)}
-                    className="h-12 mt-1"
-                  />
+      case 5:
+        return (
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">Job Posting Preferences</h2>
+
+              <div className="grid grid-cols-1 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="visibility">Job Visibility</Label>
+                  <Select
+                    value={visibility}
+                    onValueChange={(value) => setVisibility(value)}
+                  >
+                    <SelectTrigger id="visibility">
+                      <SelectValue placeholder="Select visibility" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Public">Public</SelectItem>
+                      <SelectItem value="Private">Private</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <div>
-                  <Label htmlFor="contactPhone" className="text-base">
-                    Contact Phone (Optional)
-                  </Label>
-                  <Input
-                    id="contactPhone"
-                    placeholder="e.g. 0712 345 678"
-                    value={contactPhone}
-                    onChange={(e) => setContactPhone(e.target.value)}
-                    className="h-12 mt-1"
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="allow-messages"
+                    checked={allowMessages}
+                    onCheckedChange={setAllowMessages}
                   />
+                  <Label htmlFor="allow-messages">
+                    Allow applicants to send messages
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="enable-notifications"
+                    checked={enableNotifications}
+                    onCheckedChange={setEnableNotifications}
+                  />
+                  <Label htmlFor="enable-notifications">
+                    Receive notifications for new applications
+                  </Label>
                 </div>
               </div>
             </div>
-          )}
 
-          {currentStep === 5 && (
-            <div className="space-y-6">
-              <h2 className="text-xl font-semibold">
-                5. Job Posting Preferences
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h3 className="text-sm font-medium text-blue-800 mb-2">
+                Ready to post your job?
+              </h3>
+              <p className="text-sm text-blue-700">
+                Review your job details before posting. Once posted, your job
+                will be visible to potential applicants based on your visibility
+                settings.
+              </p>
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="container mx-auto py-8 px-4">
+      <div className="max-w-4xl mx-auto">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold mb-2">Post a New Job</h1>
+          <p className="text-gray-600">
+            Fill in the details below to create a new job posting
+          </p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
+          <div className="mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold">
+                Step {currentStep} of 5: {getStepTitle(currentStep)}
               </h2>
-
-              <div>
-                <Label htmlFor="visibility" className="text-base">
-                  Job Visibility
-                </Label>
-                <Select value={visibility} onValueChange={setVisibility}>
-                  <SelectTrigger className="h-12 mt-1">
-                    <SelectValue placeholder="Select visibility" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Public">
-                      Public (Anyone can see & apply)
-                    </SelectItem>
-                    <SelectItem value="Private">
-                      Private (Only invited candidates can apply)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="allowMessages"
-                  checked={allowMessages}
-                  onCheckedChange={setAllowMessages}
-                />
-                <Label htmlFor="allowMessages" className="cursor-pointer">
-                  Allow Job Seeker Messages
-                </Label>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="enableNotifications"
-                  checked={enableNotifications}
-                  onCheckedChange={setEnableNotifications}
-                />
-                <Label htmlFor="enableNotifications" className="cursor-pointer">
-                  Enable Notifications for Applications
-                </Label>
-              </div>
             </div>
-          )}
-        </CardContent>
-        <CardFooter className="flex justify-between pt-6">
-          {currentStep > 1 ? (
-            <Button variant="outline" onClick={prevStep}>
-              Previous
-            </Button>
-          ) : (
-            <div></div>
-          )}
-
-          {currentStep < 5 ? (
-            <Button
-              onClick={nextStep}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              Next
-            </Button>
-          ) : (
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={handlePreview}>
-                Preview Job
-              </Button>
-              <Button
-                onClick={handleSubmit}
-                className="bg-green-600 hover:bg-green-700"
-                disabled={loading}
-              >
-                {loading ? "Posting Job..." : "Post Job Now"}
-              </Button>
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div
+                className="bg-green-600 h-2.5 rounded-full"
+                style={{ width: `${(currentStep / 5) * 100}%` }}
+              ></div>
             </div>
-          )}
-        </CardFooter>
-      </Card>
+          </div>
+
+          {renderStepContent()}
+
+          <div className="flex justify-between mt-8">
+            {currentStep > 1 ? (
+              <Button variant="outline" onClick={prevStep}>
+                Previous
+              </Button>
+            ) : (
+              <div></div>
+            )}
+
+            {currentStep < 5 ? (
+              <Button onClick={nextStep}>Next</Button>
+            ) : (
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={handlePreview}>
+                  Preview
+                </Button>
+                <Button onClick={handleSubmit} disabled={loading}>
+                  {loading ? (
+                    <>
+                      <div className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                      Posting...
+                    </>
+                  ) : (
+                    "Post Job"
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
+}
+
+function getStepTitle(step: number): string {
+  switch (step) {
+    case 1:
+      return "Basic Job Details";
+    case 2:
+      return "Compensation & Payment";
+    case 3:
+      return "Location & Work Schedule";
+    case 4:
+      return "Application Process";
+    case 5:
+      return "Job Posting Preferences";
+    default:
+      return "";
+  }
 }

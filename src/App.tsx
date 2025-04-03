@@ -33,8 +33,8 @@ const AboutUsPage = React.lazy(() => import("./components/pages/about-us"));
 const ManageJobsPage = React.lazy(
   () => import("./components/pages/manage-jobs"),
 );
-const CandidateManagement = React.lazy(
-  () => import("./components/dashboard/CandidateManagement"),
+const ApplicantsPage = React.lazy(
+  () => import("./components/pages/applicants"),
 );
 const TaskBoard = React.lazy(() => import("./components/dashboard/TaskBoard"));
 const ChatbotSupport = React.lazy(
@@ -70,9 +70,8 @@ function AppRoutes() {
             </PrivateRoute>
           }
         />
-        <Route path="/success" element={<Success />} />
         <Route
-          path="/post-job"
+          path="/dashboard/post-job"
           element={
             <PrivateRoute>
               <PostJob />
@@ -147,41 +146,28 @@ function AppRoutes() {
           path="/dashboard/applicants"
           element={
             <PrivateRoute>
-              <CandidateManagement />
+              <ApplicantsPage />
             </PrivateRoute>
           }
         />
-        <Route
-          path="/dashboard/tasks"
-          element={
-            <PrivateRoute>
-              <TaskBoard />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/dashboard/support"
-          element={
-            <PrivateRoute>
-              <ChatbotSupport />
-            </PrivateRoute>
-          }
-        />
+        <Route path="/success" element={<Success />} />
+        {/* Add Tempo routes if in development */}
+        {import.meta.env.VITE_TEMPO && <Route path="/tempobook/*" />}
       </Routes>
-      {/* For the tempo routes */}
-      {import.meta.env.VITE_TEMPO && useRoutes(routes)}
     </>
   );
 }
 
 function App() {
   return (
-    <Suspense fallback={<LoadingScreen text="Loading..." />}>
-      <AuthProvider>
+    <AuthProvider>
+      <Suspense fallback={<LoadingScreen />}>
+        {/* For Tempo routes */}
+        {import.meta.env.VITE_TEMPO && useRoutes(routes)}
         <AppRoutes />
         <Toaster />
-      </AuthProvider>
-    </Suspense>
+      </Suspense>
+    </AuthProvider>
   );
 }
 

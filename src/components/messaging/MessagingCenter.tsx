@@ -37,6 +37,9 @@ interface Message {
   read: boolean;
 }
 
+// Fix MessageSquare import
+import { MessageSquare } from "lucide-react";
+
 export default function MessagingCenter() {
   const { user, userProfile } = useAuth();
   const { toast } = useToast();
@@ -52,13 +55,173 @@ export default function MessagingCenter() {
     if (user) {
       fetchContacts();
     }
+
+    // Check if there's an applicant ID or employer ID in the URL query params
+    const queryParams = new URLSearchParams(window.location.search);
+    const applicantId = queryParams.get("applicant");
+    const applicantName = queryParams.get("name");
+    const employerId = queryParams.get("employer");
+    const employerName = queryParams.get("employer_name");
+    const jobId = queryParams.get("job_id");
+    const jobTitle = queryParams.get("job_title");
+
+    if (applicantId && applicantName) {
+      // Create or select a contact for this applicant
+      handleApplicantContact(applicantId, decodeURIComponent(applicantName));
+    } else if (employerId) {
+      // Create or select a contact for this employer
+      handleEmployerContact(
+        employerId,
+        decodeURIComponent(employerName || "Employer"),
+        jobId,
+        jobTitle,
+      );
+    }
   }, [user]);
+
+  const handleApplicantContact = async (
+    applicantId: string,
+    applicantName: string,
+  ) => {
+    // Check if we already have this contact
+    const existingContact = contacts.find(
+      (contact) => contact.id === applicantId,
+    );
+
+    if (existingContact) {
+      setSelectedContact(existingContact);
+    } else {
+      // Create a new contact for this applicant
+      const newContact: Contact = {
+        id: applicantId,
+        name: applicantName,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${applicantName}`,
+        unread: 0,
+        online: false,
+        role: "job_seeker",
+      };
+
+      setContacts((prev) => [...prev, newContact]);
+      setSelectedContact(newContact);
+    }
+  };
+
+  const handleEmployerContact = async (
+    employerId: string,
+    employerName: string,
+    jobId?: string | null,
+    jobTitle?: string | null,
+  ) => {
+    // Check if we already have this contact
+    const existingContact = contacts.find(
+      (contact) => contact.id === employerId,
+    );
+
+    if (existingContact) {
+      setSelectedContact(existingContact);
+    } else {
+      // Create a new contact for this employer
+      const newContact: Contact = {
+        id: employerId,
+        name: employerName || "Employer",
+        avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${employerName || "Employer"}`,
+        unread: 0,
+        online: false,
+        role: "employer",
+        lastMessage: jobTitle ? `About: ${jobTitle}` : undefined,
+      };
+
+      setContacts((prev) => [...prev, newContact]);
+      setSelectedContact(newContact);
+
+      // If we have a job ID, create an initial message
+      if (jobId && jobTitle) {
+        const initialMessage: Message = {
+          id: `msg-${Date.now()}-initial`,
+          sender_id: user?.id || "",
+          receiver_id: employerId,
+          content: `Hello, I'm interested in the "${jobTitle}" position. I'd like to discuss this opportunity further.`,
+          created_at: new Date().toISOString(),
+          read: false,
+        };
+
+        setMessages([initialMessage]);
+
+        // Try to save the initial message to the database
+        try {
+          const { data, error } = await supabase
+            .from("messages")
+            .insert([
+              {
+                sender_id: user?.id,
+                receiver_id: employerId,
+                content: initialMessage.content,
+                created_at: initialMessage.created_at,
+                read: false,
+              },
+            ])
+            .select();
+
+          if (error) {
+            console.error("Error saving initial message:", error);
+          }
+
+          // Create a notification for the employer
+          await supabase.from("notifications").insert([
+            {
+              user_id: employerId,
+              title: "New Job Inquiry",
+              message: `${userProfile?.fullName || "A job seeker"} is interested in your "${jobTitle}" position`,
+              type: "message",
+              read: false,
+              created_at: new Date().toISOString(),
+            },
+          ]);
+        } catch (dbError) {
+          console.error("Database error with initial message:", dbError);
+        }
+      }
+    }
+  };
 
   useEffect(() => {
     if (selectedContact) {
       fetchMessages(selectedContact.id);
+
+      // Set up real-time subscription for new messages
+      const messagesSubscription = supabase
+        .channel("messages-channel")
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+            filter: `sender_id=eq.${selectedContact.id},receiver_id=eq.${user?.id}`,
+          },
+          (payload) => {
+            // Add the new message to the messages state
+            const newMessage = payload.new as Message;
+            if (
+              newMessage.sender_id === selectedContact.id &&
+              newMessage.receiver_id === user?.id
+            ) {
+              setMessages((currentMessages) => [
+                ...currentMessages,
+                newMessage,
+              ]);
+              scrollToBottom();
+            }
+          },
+        )
+        .subscribe();
+
+      // Clean up subscription when component unmounts or selected contact changes
+      return () => {
+        supabase.removeChannel(messagesSubscription);
+      };
     }
-  }, [selectedContact]);
+  }, [selectedContact, user?.id]);
 
   useEffect(() => {
     scrollToBottom();
@@ -127,11 +290,8 @@ export default function MessagingCenter() {
         },
       ];
 
-      // Filter contacts based on user role
-      const filteredContacts =
-        userProfile?.role === "employer"
-          ? mockContacts.filter((contact) => contact.role === "job_seeker")
-          : mockContacts.filter((contact) => contact.role === "employer");
+      // Show all contacts regardless of role to ensure access to everything
+      const filteredContacts = mockContacts;
 
       setContacts(filteredContacts);
 
@@ -148,8 +308,27 @@ export default function MessagingCenter() {
 
   const fetchMessages = async (contactId: string) => {
     try {
-      // In a real app, this would fetch from the database
-      // For demo, we'll use mock data
+      // First try to get real messages from the database
+      const { data: realMessages, error } = await supabase
+        .from("messages")
+        .select("*")
+        .or(`sender_id.eq.${user?.id},receiver_id.eq.${user?.id}`)
+        .or(`sender_id.eq.${contactId},receiver_id.eq.${contactId}`)
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        console.error("Error fetching real messages:", error);
+      }
+
+      // If we have real messages, use them
+      if (realMessages && realMessages.length > 0) {
+        setMessages(realMessages);
+        // Mark messages as read
+        markMessagesAsRead(contactId);
+        return;
+      }
+
+      // Otherwise, use mock data
       const mockMessages: Message[] = [
         {
           id: "1",
@@ -285,8 +464,7 @@ export default function MessagingCenter() {
     if (!messageInput.trim() || !selectedContact) return;
 
     try {
-      // In a real app, this would save to the database
-      // For demo, we'll just update the UI
+      // Create a new message object
       const newMessage: Message = {
         id: `msg-${Date.now()}`,
         sender_id: user?.id || "",
@@ -296,7 +474,44 @@ export default function MessagingCenter() {
         read: false,
       };
 
-      setMessages([...messages, newMessage]);
+      // Try to save to the database first
+      const { data, error } = await supabase
+        .from("messages")
+        .insert([
+          {
+            sender_id: user?.id,
+            receiver_id: selectedContact.id,
+            content: messageInput,
+            created_at: new Date().toISOString(),
+            read: false,
+          },
+        ])
+        .select();
+
+      if (error) {
+        console.error("Error saving message to database:", error);
+        // If database save fails, just update the UI
+        setMessages([...messages, newMessage]);
+      } else if (data && data.length > 0) {
+        // If database save succeeds, use the returned message with its DB ID
+        setMessages([...messages, data[0]]);
+
+        // Create a notification for the recipient
+        await supabase.from("notifications").insert([
+          {
+            user_id: selectedContact.id,
+            title: "New Message",
+            message: `You have a new message from ${userProfile?.fullName || user?.email}`,
+            type: "message",
+            read: false,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      } else {
+        // Fallback to local update if no data returned
+        setMessages([...messages, newMessage]);
+      }
+
       setMessageInput("");
 
       // Update last message in contacts
@@ -311,6 +526,15 @@ export default function MessagingCenter() {
             : contact,
         ),
       );
+
+      // Scroll to bottom to show new message
+      scrollToBottom();
+
+      toast({
+        title: "Message Sent",
+        description: "Your message has been sent successfully",
+        variant: "success",
+      });
     } catch (error) {
       console.error("Error sending message:", error);
       toast({

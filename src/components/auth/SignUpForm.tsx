@@ -74,9 +74,14 @@ export default function SignUpForm() {
 
     try {
       console.log("Form submitted, preparing user data");
+
+      // Validate role is one of the expected values
+      const validatedRole = userRole === "employer" ? "employer" : "job_seeker";
+      console.log("Validated role:", validatedRole);
+
       const userData = {
         fullName,
-        role: userRole,
+        role: validatedRole, // Use validated role
         phone,
         location,
         skills: skills ? skills.split(",").map((skill) => skill.trim()) : [],
@@ -85,11 +90,14 @@ export default function SignUpForm() {
         businessType,
       };
 
-      // Store user role in localStorage temporarily
-      localStorage.setItem("userRole", userRole);
-      console.log("User role stored temporarily:", userRole);
+      // We no longer need to store role in localStorage as we'll get it from the database
+      // But we'll log it for debugging purposes
+      console.log("Using role for signup:", validatedRole);
 
-      console.log("Calling signUp function with data", { email, userRole });
+      console.log("Calling signUp function with data", {
+        email,
+        role: validatedRole,
+      });
       try {
         await signUp(email, password, userData);
       } catch (signupError: any) {

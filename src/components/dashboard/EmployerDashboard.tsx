@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "../../../supabase/supabase";
 import { useAuth } from "../../../supabase/auth";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { useToast } from "@/components/ui/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Bell,
   Briefcase,
@@ -23,8 +32,10 @@ import {
   DollarSign,
   FileText,
   BarChart2,
+  Search,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { Input } from "@/components/ui/input";
 
 interface Job {
   id: string;
@@ -48,6 +59,8 @@ interface Applicant {
   created_at: string;
   skills: string[];
   rating: number;
+  resume_url?: string;
+  notes?: string;
 }
 
 interface Notification {
@@ -58,6 +71,41 @@ interface Notification {
   read: boolean;
   created_at: string;
 }
+
+// Job Status Badge Component - moved outside to be accessible to JobItem
+const getJobStatusBadge = (status: string) => {
+  switch (status) {
+    case "active":
+      return (
+        <Badge
+          variant="outline"
+          className="bg-green-50 text-green-700 border-green-200"
+        >
+          Active
+        </Badge>
+      );
+    case "closed":
+      return (
+        <Badge
+          variant="outline"
+          className="bg-gray-50 text-gray-700 border-gray-200"
+        >
+          Closed
+        </Badge>
+      );
+    case "draft":
+      return (
+        <Badge
+          variant="outline"
+          className="bg-blue-50 text-blue-700 border-blue-200"
+        >
+          Draft
+        </Badge>
+      );
+    default:
+      return <Badge variant="outline">{status}</Badge>;
+  }
+};
 
 // Job Item Component for displaying job listings
 const JobItem = ({ job }: { job: Job }) => {
@@ -104,9 +152,13 @@ const JobItem = ({ job }: { job: Job }) => {
 const ApplicantItem = ({
   applicant,
   onStatusChange,
+  onViewResume,
+  onMessageApplicant,
 }: {
   applicant: Applicant;
   onStatusChange: (applicationId: string, newStatus: string) => void;
+  onViewResume: (resumeUrl: string, applicantName: string) => void;
+  onMessageApplicant: (applicantId: string, applicantName: string) => void;
 }) => {
   return (
     <div className="border rounded-lg p-4 bg-white">
@@ -174,9 +226,30 @@ const ApplicantItem = ({
             <XCircle className="h-3 w-3 mr-1" /> Reject
           </Button>
         </div>
-        <Button variant="outline" size="sm" className="text-xs">
-          <MessageSquare className="h-3 w-3 mr-1" /> Message
-        </Button>
+        <div className="flex gap-2">
+          {applicant.resume_url && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100"
+              onClick={() =>
+                onViewResume(applicant.resume_url || "", applicant.full_name)
+              }
+            >
+              <FileText className="h-3 w-3 mr-1" /> View CV
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs"
+            onClick={() =>
+              onMessageApplicant(applicant.id, applicant.full_name)
+            }
+          >
+            <MessageSquare className="h-3 w-3 mr-1" /> Message
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -184,10 +257,18 @@ const ApplicantItem = ({
 
 export default function EmployerDashboard() {
   const { user, userProfile } = useAuth();
+  const { toast } = useToast();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedResume, setSelectedResume] = useState<{
+    url: string;
+    name: string;
+  } | null>(null);
+  const [showResumeDialog, setShowResumeDialog] = useState(false);
+  const [searchValue, setSearchValue] = useState("");
+  const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -197,6 +278,23 @@ export default function EmployerDashboard() {
       fetchNotifications();
     }
   }, [user]);
+
+  // Filter jobs when search value changes
+  useEffect(() => {
+    if (searchValue.trim() === "") {
+      setFilteredJobs(jobs);
+    } else {
+      const lowercaseSearch = searchValue.toLowerCase();
+      const filtered = jobs.filter(
+        (job) =>
+          job.title.toLowerCase().includes(lowercaseSearch) ||
+          job.company.toLowerCase().includes(lowercaseSearch) ||
+          job.location.toLowerCase().includes(lowercaseSearch) ||
+          job.type.toLowerCase().includes(lowercaseSearch),
+      );
+      setFilteredJobs(filtered);
+    }
+  }, [searchValue, jobs]);
 
   const fetchJobs = async () => {
     try {
@@ -236,6 +334,7 @@ export default function EmployerDashboard() {
       );
 
       setJobs(jobsWithCounts);
+      setFilteredJobs(jobsWithCounts);
     } catch (error) {
       console.error("Error fetching jobs:", error);
     }
@@ -268,6 +367,8 @@ export default function EmployerDashboard() {
           job_id,
           status,
           created_at,
+          resume_url,
+          notes,
           applicant:applicant_id(id, full_name, email, skills, rating)
         `,
         )
@@ -290,6 +391,8 @@ export default function EmployerDashboard() {
           created_at: app.created_at,
           skills: app.applicant.skills || [],
           rating: app.applicant.rating || 0,
+          resume_url: app.resume_url || app.applicant.resume_url,
+          notes: app.notes,
         };
       });
 
@@ -315,6 +418,20 @@ export default function EmployerDashboard() {
     } catch (error) {
       console.error("Error fetching notifications:", error);
     }
+  };
+
+  const handleViewResume = (resumeUrl: string, applicantName: string) => {
+    setSelectedResume({ url: resumeUrl, name: applicantName });
+    setShowResumeDialog(true);
+  };
+
+  const handleMessageApplicant = (
+    applicantId: string,
+    applicantName: string,
+  ) => {
+    navigate(
+      `/dashboard/messages?applicant=${applicantId}&name=${encodeURIComponent(applicantName)}`,
+    );
   };
 
   const updateApplicationStatus = async (
@@ -401,50 +518,65 @@ export default function EmployerDashboard() {
     }
   };
 
-  const getJobStatusBadge = (status: string) => {
-    switch (status) {
-      case "active":
-        return (
-          <Badge
-            variant="outline"
-            className="bg-green-50 text-green-700 border-green-200"
-          >
-            Active
-          </Badge>
-        );
-      case "closed":
-        return (
-          <Badge
-            variant="outline"
-            className="bg-gray-50 text-gray-700 border-gray-200"
-          >
-            Closed
-          </Badge>
-        );
-      case "draft":
-        return (
-          <Badge
-            variant="outline"
-            className="bg-blue-50 text-blue-700 border-blue-200"
-          >
-            Draft
-          </Badge>
-        );
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
-  };
+  // getJobStatusBadge moved outside the component to be accessible to JobItem
 
+  // Show loading state while data is being fetched
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
         <LoadingSpinner size="lg" />
+        <p className="ml-2 text-gray-600">Loading dashboard...</p>
       </div>
     );
   }
 
+  // Temporarily disabled role check to allow access to employer dashboard
+
   return (
     <div className="p-6 space-y-6">
+      {/* Resume Viewer Dialog */}
+      {showResumeDialog && selectedResume && (
+        <Dialog open={showResumeDialog} onOpenChange={setShowResumeDialog}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>Resume: {selectedResume.name}</DialogTitle>
+              <DialogDescription>
+                View the applicant's resume below
+              </DialogDescription>
+            </DialogHeader>
+            <div className="h-[70vh] overflow-auto border rounded-md p-2">
+              {selectedResume.url.endsWith(".pdf") ? (
+                <iframe
+                  src={selectedResume.url}
+                  className="w-full h-full"
+                  title={`${selectedResume.name}'s Resume`}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <a
+                    href={selectedResume.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex flex-col items-center text-blue-600 hover:underline"
+                  >
+                    <FileText className="h-16 w-16 mb-2" />
+                    <span>Click to open resume in new tab</span>
+                  </a>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setShowResumeDialog(false)}>Close</Button>
+              <Button
+                variant="outline"
+                onClick={() => window.open(selectedResume.url, "_blank")}
+              >
+                Open in New Tab
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
       <div className="flex flex-col md:flex-row gap-6">
         {/* Business Profile */}
         <Card className="md:w-1/3 bg-white shadow-sm">
@@ -654,16 +786,32 @@ export default function EmployerDashboard() {
               </TabsList>
 
               <TabsContent value="jobs" className="space-y-4">
-                {jobs.length > 0 ? (
-                  jobs.map((job) => <JobItem key={job.id} job={job} />)
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium">Job Listings</h3>
+                  <div className="relative w-64">
+                    <Input
+                      type="text"
+                      placeholder="Search jobs..."
+                      value={searchValue}
+                      onChange={(e) => setSearchValue(e.target.value)}
+                      className="pl-10 pr-4 py-2"
+                    />
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  </div>
+                </div>
+
+                {filteredJobs.length > 0 ? (
+                  filteredJobs.map((job) => <JobItem key={job.id} job={job} />)
                 ) : (
                   <div className="text-center py-8">
                     <Briefcase className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-700 mb-2">
-                      No Job Listings Yet
+                      No Job Listings Found
                     </h3>
                     <p className="text-gray-500 mb-4">
-                      Post your first job to start receiving applications
+                      {searchValue
+                        ? "No jobs match your search criteria."
+                        : "Post your first job to start receiving applications"}
                     </p>
                     <Button
                       className="bg-green-600 hover:bg-green-700"
@@ -674,7 +822,7 @@ export default function EmployerDashboard() {
                   </div>
                 )}
 
-                {jobs.length > 0 && (
+                {filteredJobs.length > 0 && (
                   <Button
                     className="w-full mt-2 bg-green-600 hover:bg-green-700"
                     onClick={() => navigate("/post-job")}
@@ -713,6 +861,8 @@ export default function EmployerDashboard() {
                         key={applicant.application_id}
                         applicant={applicant}
                         onStatusChange={updateApplicationStatus}
+                        onViewResume={handleViewResume}
+                        onMessageApplicant={handleMessageApplicant}
                       />
                     ))}
                   </>
@@ -936,84 +1086,12 @@ export default function EmployerDashboard() {
                           <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
                           <span>Unlimited job postings</span>
                         </li>
-                        <li className="flex items-start">
-                          <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-                          <span>Advanced applicant filtering</span>
-                        </li>
-                        <li className="flex items-start">
-                          <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-                          <span>Priority job visibility</span>
-                        </li>
-                        <li className="flex items-start">
-                          <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-                          <span>Verified employer badge</span>
-                        </li>
-                        <li className="flex items-start">
-                          <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-                          <span>Featured job listings</span>
-                        </li>
                       </ul>
-                      <Button className="w-full mt-6 bg-blue-600 hover:bg-blue-700">
-                        Upgrade Now
-                      </Button>
                     </CardContent>
                   </Card>
                 </div>
               </TabsContent>
             </Tabs>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex flex-col md:flex-row gap-6">
-        {/* Notifications */}
-        <Card className="w-full bg-white shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-medium">
-              Recent Notifications
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {notifications.length > 0 ? (
-                notifications.map((notification) => (
-                  <div
-                    key={notification.id}
-                    className={`p-3 rounded-lg border ${notification.read ? "bg-gray-50" : "bg-blue-50 border-blue-100"}`}
-                    onClick={() => markNotificationAsRead(notification.id)}
-                  >
-                    <div className="flex items-start gap-3">
-                      <Bell
-                        className={`h-5 w-5 mt-0.5 ${notification.read ? "text-gray-400" : "text-blue-500"}`}
-                      />
-                      <div>
-                        <p className="text-sm font-medium">
-                          {notification.title}
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          {notification.message}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-2">
-                          {new Date(
-                            notification.created_at,
-                          ).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-gray-500 text-center py-6">
-                  No notifications.
-                </p>
-              )}
-
-              {notifications.length > 0 && (
-                <Button variant="outline" className="w-full mt-2">
-                  View All Notifications
-                </Button>
-              )}
-            </div>
           </CardContent>
         </Card>
       </div>

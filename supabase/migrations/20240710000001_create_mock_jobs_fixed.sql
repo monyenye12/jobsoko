@@ -1,0 +1,36 @@
+-- Add more mock jobs with IT categories
+INSERT INTO jobs (id, title, company, location, type, category, description, salary_min, salary_max, salary_type, payment_frequency, payment_method, benefits, skills, positions, work_hours, is_remote, deadline, application_methods, contact_person, contact_phone, created_at, employer_id, status, urgent, latitude, longitude)
+SELECT
+  gen_random_uuid(), 'Frontend Developer', 'TechSolutions Ltd', 'Nairobi, Kenya', 'Full-time', 'IT', 'We are looking for a skilled Frontend Developer to join our team. The ideal candidate should have experience with React, TypeScript, and modern CSS frameworks.', 80000, 120000, 'Range', 'Monthly', 'Bank Transfer', ARRAY['Transport allowance', 'Meals', 'Insurance'], ARRAY['React', 'TypeScript', 'CSS', 'JavaScript'], 2, '9 AM - 5 PM, Monday to Friday', true, '2024-12-31', ARRAY['Apply Directly via JobSoko', 'Submit CV & Cover Letter'], 'John Doe', '+254712345678', NOW(), (SELECT id FROM users WHERE role = 'employer' LIMIT 1), 'active', false, -1.2921, 36.8219
+WHERE EXISTS (SELECT 1 FROM users WHERE role = 'employer' LIMIT 1)
+AND NOT EXISTS (SELECT 1 FROM jobs WHERE title = 'Frontend Developer' AND company = 'TechSolutions Ltd');
+
+INSERT INTO jobs (id, title, company, location, type, category, description, salary_min, salary_max, salary_type, payment_frequency, payment_method, benefits, skills, positions, work_hours, is_remote, deadline, application_methods, contact_person, contact_phone, created_at, employer_id, status, urgent, latitude, longitude)
+SELECT
+  gen_random_uuid(), 'Backend Developer', 'DataTech Systems', 'Mombasa, Kenya', 'Full-time', 'IT', 'Looking for a Backend Developer with experience in Node.js, Express, and MongoDB. Must be able to design and implement scalable APIs.', 90000, 130000, 'Range', 'Monthly', 'Bank Transfer', ARRAY['Transport allowance', 'Insurance', 'Bonuses'], ARRAY['Node.js', 'Express', 'MongoDB', 'API Design'], 1, '8 AM - 4 PM, Monday to Friday', false, '2024-12-15', ARRAY['Apply Directly via JobSoko', 'Submit CV & Cover Letter'], 'Jane Smith', '+254723456789', NOW(), (SELECT id FROM users WHERE role = 'employer' LIMIT 1), 'active', false, -4.0435, 39.6682
+WHERE EXISTS (SELECT 1 FROM users WHERE role = 'employer' LIMIT 1)
+AND NOT EXISTS (SELECT 1 FROM jobs WHERE title = 'Backend Developer' AND company = 'DataTech Systems');
+
+INSERT INTO jobs (id, title, company, location, type, category, description, salary_min, salary_max, salary_type, payment_frequency, payment_method, benefits, skills, positions, work_hours, is_remote, deadline, application_methods, contact_person, contact_phone, created_at, employer_id, status, urgent, latitude, longitude)
+SELECT
+  gen_random_uuid(), 'Mobile App Developer', 'AppWorks Kenya', 'Kisumu, Kenya', 'Contract', 'IT', 'Seeking a Mobile App Developer with experience in React Native or Flutter. The project involves building a fintech application for the Kenyan market.', 70000, 100000, 'Range', 'Monthly', 'Mobile Money (M-Pesa, Airtel Money, etc.)', ARRAY['Flexible hours', 'Remote work options'], ARRAY['React Native', 'Flutter', 'Mobile Development', 'API Integration'], 2, 'Flexible hours', true, '2024-11-30', ARRAY['Apply Directly via JobSoko', 'Submit CV & Cover Letter'], 'Michael Ochieng', '+254734567890', NOW(), (SELECT id FROM users WHERE role = 'employer' LIMIT 1), 'active', true, -0.1022, 34.7617
+WHERE EXISTS (SELECT 1 FROM users WHERE role = 'employer' LIMIT 1)
+AND NOT EXISTS (SELECT 1 FROM jobs WHERE title = 'Mobile App Developer' AND company = 'AppWorks Kenya');
+
+INSERT INTO jobs (id, title, company, location, type, category, description, salary_min, salary_max, salary_type, payment_frequency, payment_method, benefits, skills, positions, work_hours, is_remote, deadline, application_methods, contact_person, contact_phone, created_at, employer_id, status, urgent, latitude, longitude)
+SELECT
+  gen_random_uuid(), 'Data Scientist', 'Analytics Africa', 'Nairobi, Kenya', 'Full-time', 'Data Science', 'We are looking for a Data Scientist to analyze large datasets and build predictive models. Experience with Python, R, and machine learning required.', 100000, 150000, 'Range', 'Monthly', 'Bank Transfer', ARRAY['Transport allowance', 'Meals', 'Insurance', 'Bonuses'], ARRAY['Python', 'R', 'Machine Learning', 'Data Analysis'], 1, '9 AM - 5 PM, Monday to Friday', false, '2024-12-20', ARRAY['Apply Directly via JobSoko', 'Submit CV & Cover Letter'], 'Sarah Kamau', '+254745678901', NOW(), (SELECT id FROM users WHERE role = 'employer' LIMIT 1), 'active', false, -1.2864, 36.8172
+WHERE EXISTS (SELECT 1 FROM users WHERE role = 'employer' LIMIT 1)
+AND NOT EXISTS (SELECT 1 FROM jobs WHERE title = 'Data Scientist' AND company = 'Analytics Africa');
+
+INSERT INTO jobs (id, title, company, location, type, category, description, salary_min, salary_max, salary_type, payment_frequency, payment_method, benefits, skills, positions, work_hours, is_remote, deadline, application_methods, contact_person, contact_phone, created_at, employer_id, status, urgent, latitude, longitude)
+SELECT
+  gen_random_uuid(), 'Network Administrator', 'ConnectTech Solutions', 'Nakuru, Kenya', 'Full-time', 'Network Administration', 'Seeking a Network Administrator to manage and maintain our IT infrastructure. CCNA certification preferred.', 60000, 90000, 'Range', 'Monthly', 'Bank Transfer', ARRAY['Transport allowance', 'Insurance'], ARRAY['Network Administration', 'CCNA', 'Cisco', 'Troubleshooting'], 1, '8 AM - 5 PM, Monday to Friday', false, '2024-11-15', ARRAY['Apply Directly via JobSoko', 'Submit CV & Cover Letter'], 'David Mwangi', '+254756789012', NOW(), (SELECT id FROM users WHERE role = 'employer' LIMIT 1), 'active', false, -0.3031, 36.0800
+WHERE EXISTS (SELECT 1 FROM users WHERE role = 'employer' LIMIT 1)
+AND NOT EXISTS (SELECT 1 FROM jobs WHERE title = 'Network Administrator' AND company = 'ConnectTech Solutions');
+
+INSERT INTO jobs (id, title, company, location, type, category, description, salary_min, salary_max, salary_type, payment_frequency, payment_method, benefits, skills, positions, work_hours, is_remote, deadline, application_methods, contact_person, contact_phone, created_at, employer_id, status, urgent, latitude, longitude)
+SELECT
+  gen_random_uuid(), 'Cybersecurity Analyst', 'SecureNet Kenya', 'Nairobi, Kenya', 'Full-time', 'Cybersecurity', 'Looking for a Cybersecurity Analyst to help protect our systems from threats. Experience with penetration testing and security audits required.', 90000, 130000, 'Range', 'Monthly', 'Bank Transfer', ARRAY['Transport allowance', 'Meals', 'Insurance', 'Bonuses'], ARRAY['Cybersecurity', 'Penetration Testing', 'Security Audits', 'Threat Analysis'], 1, '9 AM - 5 PM, Monday to Friday', false, '2024-12-10', ARRAY['Apply Directly via JobSoko', 'Submit CV & Cover Letter'], 'Lucy Njeri', '+254767890123', NOW(), (SELECT id FROM users WHERE role = 'employer' LIMIT 1), 'active', true, -1.2933, 36.8172
+WHERE EXISTS (SELECT 1 FROM users WHERE role = 'employer' LIMIT 1)
+AND NOT EXISTS (SELECT 1 FROM jobs WHERE title = 'Cybersecurity Analyst' AND company = 'SecureNet Kenya');

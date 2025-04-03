@@ -55,25 +55,85 @@ export default function ResumeViewer() {
 
     setUploading(true);
     try {
+      try {
+        // First check if the bucket exists
+        const { data: buckets, error: listError } =
+          await supabase.storage.listBuckets();
+
+        if (listError) {
+          console.error("Error listing buckets:", listError);
+          // Continue anyway, we'll try to create the bucket
+        }
+
+        const bucketExists = buckets?.some(
+          (bucket) => bucket.name === "resumes",
+        );
+
+        // Create the bucket if it doesn't exist
+        if (!bucketExists) {
+          console.log("Creating 'resumes' bucket...");
+          try {
+            const { error: bucketError } = await supabase.storage.createBucket(
+              "resumes",
+              {
+                public: true,
+                fileSizeLimit: 5242880, // 5MB
+                allowedMimeTypes: ["application/pdf"],
+              },
+            );
+
+            if (
+              bucketError &&
+              bucketError.message !== "Bucket already exists"
+            ) {
+              console.error("Error creating bucket:", bucketError);
+              // Continue anyway, as the bucket might exist despite the error
+            }
+          } catch (bucketCreateError) {
+            console.error("Exception creating bucket:", bucketCreateError);
+            // Continue anyway, the bucket might already exist
+          }
+        }
+      } catch (storageError) {
+        console.error("Storage operation error:", storageError);
+        // Continue with upload attempt anyway
+      }
+
       // Upload file to Supabase Storage
       const fileName = `${user?.id}-resume-${Date.now()}.pdf`;
+      console.log(`Uploading file ${fileName} to 'resumes' bucket...`);
+
       const { error: uploadError } = await supabase.storage
         .from("resumes")
-        .upload(fileName, file);
+        .upload(fileName, file, {
+          cacheControl: "3600",
+          upsert: true,
+        });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error("Upload error:", uploadError);
+        throw uploadError;
+      }
 
       // Get public URL
       const { data } = supabase.storage.from("resumes").getPublicUrl(fileName);
       const newResumeUrl = data.publicUrl;
+      console.log("Resume URL generated:", newResumeUrl);
 
       // Update user profile with resume URL
+      console.log("Updating user profile with resume URL...");
       const { error: updateError } = await supabase
         .from("users")
-        .update({ resume_url: newResumeUrl })
+        .update({
+          resume_url: newResumeUrl,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", user?.id);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error("Error updating user profile:", updateError);
+        throw updateError;
+      }
 
       setResumeUrl(newResumeUrl);
       toast({

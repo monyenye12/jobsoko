@@ -22,6 +22,7 @@ import {
   AlertCircle,
   Phone,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface Application {
   id: string;
@@ -33,6 +34,7 @@ interface Application {
     salary: string;
     type: string;
     urgent: boolean;
+    employer_id?: string;
   };
   status: "pending" | "shortlisted" | "interview" | "accepted" | "rejected";
   created_at: string;
@@ -48,6 +50,7 @@ export default function MyApplications() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (user) {
@@ -57,101 +60,127 @@ export default function MyApplications() {
 
   const fetchApplications = async () => {
     try {
-      // In a real app, this would fetch from the database
-      // For demo, we'll use mock data
-      const mockApplications: Application[] = [
-        {
-          id: "1",
-          job: {
-            id: "job-1",
-            title: "Construction Worker",
-            company: "ABC Construction",
-            location: "Westlands, Nairobi",
-            salary: "KSh 800-1200/day",
-            type: "Full-time",
-            urgent: true,
-          },
-          status: "interview",
-          created_at: new Date(
-            new Date().setDate(new Date().getDate() - 5),
-          ).toISOString(),
-          interview_date: new Date(
-            new Date().setDate(new Date().getDate() + 2),
-          ).toISOString(),
-          employer_contact: "+254 712 345 678",
-          notes: "Bring your ID and certificates",
-        },
-        {
-          id: "2",
-          job: {
-            id: "job-2",
-            title: "Delivery Driver",
-            company: "Quick Deliveries",
-            location: "Kilimani, Nairobi",
-            salary: "KSh 700-900/day",
-            type: "Part-time",
-            urgent: false,
-          },
-          status: "pending",
-          created_at: new Date(
-            new Date().setDate(new Date().getDate() - 2),
-          ).toISOString(),
-        },
-        {
-          id: "3",
-          job: {
-            id: "job-3",
-            title: "Retail Assistant",
-            company: "Retail Mart",
-            location: "CBD, Nairobi",
-            salary: "KSh 25,000/month",
-            type: "Full-time",
-            urgent: false,
-          },
-          status: "shortlisted",
-          created_at: new Date(
-            new Date().setDate(new Date().getDate() - 7),
-          ).toISOString(),
-          employer_contact: "+254 723 456 789",
-        },
-        {
-          id: "4",
-          job: {
-            id: "job-4",
-            title: "Security Guard",
-            company: "Secure Solutions",
-            location: "Lavington, Nairobi",
-            salary: "KSh 30,000/month",
-            type: "Full-time",
-            urgent: true,
-          },
-          status: "rejected",
-          created_at: new Date(
-            new Date().setDate(new Date().getDate() - 14),
-          ).toISOString(),
-          notes: "Position filled",
-        },
-        {
-          id: "5",
-          job: {
-            id: "job-5",
-            title: "Farm Worker",
-            company: "Green Farms Ltd",
-            location: "Limuru, Kiambu",
-            salary: "KSh 600-800/day",
-            type: "Seasonal",
-            urgent: false,
-          },
-          status: "accepted",
-          created_at: new Date(
-            new Date().setDate(new Date().getDate() - 10),
-          ).toISOString(),
-          employer_contact: "+254 734 567 890",
-          notes: "Start date: Next Monday",
-        },
-      ];
+      // Fetch real applications from the database
+      const { data, error } = await supabase
+        .from("applications")
+        .select(
+          `
+          id,
+          status,
+          created_at,
+          interview_date,
+          resume_url,
+          notes,
+          job:job_id(id, title, company, location, salary, type, urgent, employer_id)
+        `,
+        )
+        .eq("applicant_id", user?.id)
+        .order("created_at", { ascending: false });
 
-      setApplications(mockApplications);
+      if (error) {
+        console.error("Error fetching applications:", error);
+        // Fall back to mock data if there's an error
+        const mockApplications: Application[] = [
+          {
+            id: "1",
+            job: {
+              id: "job-1",
+              title: "Construction Worker",
+              company: "ABC Construction",
+              location: "Westlands, Nairobi",
+              salary: "KSh 800-1200/day",
+              type: "Full-time",
+              urgent: true,
+              employer_id: "employer-1",
+            },
+            status: "interview",
+            created_at: new Date(
+              new Date().setDate(new Date().getDate() - 5),
+            ).toISOString(),
+            interview_date: new Date(
+              new Date().setDate(new Date().getDate() + 2),
+            ).toISOString(),
+            employer_contact: "+254 712 345 678",
+            notes: "Bring your ID and certificates",
+          },
+          {
+            id: "2",
+            job: {
+              id: "job-2",
+              title: "Delivery Driver",
+              company: "Quick Deliveries",
+              location: "Kilimani, Nairobi",
+              salary: "KSh 700-900/day",
+              type: "Part-time",
+              urgent: false,
+              employer_id: "employer-2",
+            },
+            status: "pending",
+            created_at: new Date(
+              new Date().setDate(new Date().getDate() - 2),
+            ).toISOString(),
+          },
+          {
+            id: "3",
+            job: {
+              id: "job-3",
+              title: "Retail Assistant",
+              company: "Retail Mart",
+              location: "CBD, Nairobi",
+              salary: "KSh 25,000/month",
+              type: "Full-time",
+              urgent: false,
+              employer_id: "employer-3",
+            },
+            status: "shortlisted",
+            created_at: new Date(
+              new Date().setDate(new Date().getDate() - 7),
+            ).toISOString(),
+            employer_contact: "+254 723 456 789",
+          },
+          {
+            id: "4",
+            job: {
+              id: "job-4",
+              title: "Security Guard",
+              company: "Secure Solutions",
+              location: "Lavington, Nairobi",
+              salary: "KSh 30,000/month",
+              type: "Full-time",
+              urgent: true,
+              employer_id: "employer-4",
+            },
+            status: "rejected",
+            created_at: new Date(
+              new Date().setDate(new Date().getDate() - 14),
+            ).toISOString(),
+            notes: "Position filled",
+          },
+          {
+            id: "5",
+            job: {
+              id: "job-5",
+              title: "Farm Worker",
+              company: "Green Farms Ltd",
+              location: "Limuru, Kiambu",
+              salary: "KSh 600-800/day",
+              type: "Seasonal",
+              urgent: false,
+              employer_id: "employer-5",
+            },
+            status: "accepted",
+            created_at: new Date(
+              new Date().setDate(new Date().getDate() - 10),
+            ).toISOString(),
+            employer_contact: "+254 734 567 890",
+            notes: "Start date: Next Monday",
+          },
+        ];
+
+        setApplications(data || mockApplications);
+      } else {
+        setApplications(data || []);
+      }
     } catch (error) {
       console.error("Error fetching applications:", error);
       toast({
@@ -202,6 +231,20 @@ export default function MyApplications() {
             {status}
           </Badge>
         );
+    }
+  };
+
+  const handleMessageEmployer = (application: Application) => {
+    if (application.job.employer_id) {
+      navigate(
+        `/dashboard/messages?employer=${application.job.employer_id}&employer_name=${encodeURIComponent(application.job.company)}&job_id=${application.job.id}&job_title=${encodeURIComponent(application.job.title)}`,
+      );
+    } else {
+      toast({
+        title: "Error",
+        description: "Employer contact information not available.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -299,42 +342,48 @@ export default function MyApplications() {
                           </div>
                         </div>
 
-                        <div className="mt-4 md:mt-0 md:text-right">
-                          <p className="text-sm text-gray-500">
-                            <Clock className="inline h-3 w-3 mr-1" />
-                            Applied{" "}
-                            {new Date(
-                              application.created_at,
-                            ).toLocaleDateString()}
-                          </p>
-
-                          {application.interview_date && (
-                            <p className="text-sm text-purple-600 mt-1">
-                              <Calendar className="inline h-3 w-3 mr-1" />
-                              Interview:{" "}
-                              {new Date(
-                                application.interview_date,
-                              ).toLocaleDateString()}
-                            </p>
+                        <div className="mt-4 md:mt-0 flex flex-col gap-2">
+                          {application.status === "interview" && (
+                            <div className="flex items-center text-purple-600 mb-2">
+                              <Calendar className="h-4 w-4 mr-1" />
+                              <span className="text-sm">
+                                Interview:{" "}
+                                {new Date(
+                                  application.interview_date || "",
+                                ).toLocaleDateString()}
+                              </span>
+                            </div>
                           )}
 
                           {application.employer_contact && (
-                            <p className="text-sm text-blue-600 mt-1">
-                              <Phone className="inline h-3 w-3 mr-1" />
-                              Contact: {application.employer_contact}
-                            </p>
+                            <div className="flex items-center text-gray-600 mb-2">
+                              <Phone className="h-4 w-4 mr-1" />
+                              <span className="text-sm">
+                                {application.employer_contact}
+                              </span>
+                            </div>
                           )}
 
-                          <div className="mt-3">
+                          <div className="flex gap-2 mt-auto">
                             <Button
+                              variant="outline"
                               size="sm"
-                              className="bg-green-600 hover:bg-green-700 mr-2"
+                              className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                              onClick={() => handleMessageEmployer(application)}
                             >
-                              <MessageSquare className="h-3 w-3 mr-1" />
+                              <MessageSquare className="h-4 w-4 mr-1" />
                               Message
                             </Button>
-                            <Button size="sm" variant="outline">
-                              View Details
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-gray-600 border-gray-200 hover:bg-gray-50"
+                              onClick={() =>
+                                navigate(`/dashboard/job/${application.job.id}`)
+                              }
+                            >
+                              View Job
                             </Button>
                           </div>
                         </div>
@@ -342,150 +391,157 @@ export default function MyApplications() {
 
                       {application.notes && (
                         <div className="mt-3 pt-3 border-t border-gray-100">
-                          <p className="text-sm text-gray-600">
-                            <span className="font-medium">Notes:</span>{" "}
-                            {application.notes}
-                          </p>
+                          <div className="flex items-start">
+                            <AlertCircle className="h-4 w-4 text-blue-500 mt-0.5 mr-2" />
+                            <p className="text-sm text-gray-600">
+                              {application.notes}
+                            </p>
+                          </div>
                         </div>
                       )}
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-12">
-                  <div className="mx-auto w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-                    <Briefcase className="h-8 w-8 text-gray-400" />
-                  </div>
-                  <h3 className="text-lg font-medium">No applications found</h3>
-                  <p className="text-gray-500 mt-1 mb-6">
-                    {searchTerm
-                      ? `No applications match "${searchTerm}". Try a different search term.`
-                      : "You haven't applied to any jobs yet. Browse jobs and start applying!"}
+                <div className="text-center py-10">
+                  <FileText className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-1">
+                    No applications yet
+                  </h3>
+                  <p className="text-gray-500 mb-4">
+                    Start applying for jobs to see your applications here.
                   </p>
-                  <Button className="bg-green-600 hover:bg-green-700">
+                  <Button onClick={() => navigate("/dashboard/find-jobs")}>
                     Find Jobs
                   </Button>
                 </div>
               )}
             </TabsContent>
 
-            {[
-              "pending",
-              "shortlisted",
-              "interview",
-              "accepted",
-              "rejected",
-            ].map((status) => (
-              <TabsContent key={status} value={status}>
-                {filteredApplications.filter((app) => app.status === status)
-                  .length > 0 ? (
-                  <div className="space-y-4">
-                    {filteredApplications
-                      .filter((app) => app.status === status)
-                      .map((application) => (
-                        <div
-                          key={application.id}
-                          className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow"
-                        >
-                          <div className="flex flex-col md:flex-row justify-between">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h3 className="font-semibold text-lg text-gray-900">
-                                  {application.job.title}
-                                </h3>
-                                {getStatusBadge(application.status)}
-                              </div>
-                              <p className="text-gray-700 font-medium mt-1">
-                                {application.job.company}
-                              </p>
-
-                              <div className="flex items-center text-gray-500 mt-2">
-                                <MapPin className="h-4 w-4 mr-1" />
-                                <span className="text-sm">
-                                  {application.job.location}
-                                </span>
-                              </div>
-
-                              <div className="flex flex-wrap gap-2 mt-3">
-                                <div className="flex items-center bg-blue-50 text-blue-700 rounded-full px-3 py-1 text-xs">
-                                  <Briefcase className="h-3 w-3 mr-1" />
-                                  {application.job.type}
+            {["pending", "shortlisted", "interview", "accepted"].map(
+              (status) => (
+                <TabsContent key={status} value={status}>
+                  {filteredApplications.filter((app) => app.status === status)
+                    .length > 0 ? (
+                    <div className="space-y-4">
+                      {filteredApplications
+                        .filter((app) => app.status === status)
+                        .map((application) => (
+                          <div
+                            key={application.id}
+                            className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow"
+                          >
+                            <div className="flex flex-col md:flex-row justify-between">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-semibold text-lg text-gray-900">
+                                    {application.job.title}
+                                  </h3>
+                                  {getStatusBadge(application.status)}
                                 </div>
-                                <div className="bg-green-50 text-green-700 rounded-full px-3 py-1 text-xs">
-                                  {application.job.salary}
+                                <p className="text-gray-700 font-medium mt-1">
+                                  {application.job.company}
+                                </p>
+
+                                <div className="flex items-center text-gray-500 mt-2">
+                                  <MapPin className="h-4 w-4 mr-1" />
+                                  <span className="text-sm">
+                                    {application.job.location}
+                                  </span>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2 mt-3">
+                                  <div className="flex items-center bg-blue-50 text-blue-700 rounded-full px-3 py-1 text-xs">
+                                    <Briefcase className="h-3 w-3 mr-1" />
+                                    {application.job.type}
+                                  </div>
+                                  <div className="bg-green-50 text-green-700 rounded-full px-3 py-1 text-xs">
+                                    {application.job.salary}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 md:mt-0 flex flex-col gap-2">
+                                {application.status === "interview" && (
+                                  <div className="flex items-center text-purple-600 mb-2">
+                                    <Calendar className="h-4 w-4 mr-1" />
+                                    <span className="text-sm">
+                                      Interview:{" "}
+                                      {new Date(
+                                        application.interview_date || "",
+                                      ).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {application.employer_contact && (
+                                  <div className="flex items-center text-gray-600 mb-2">
+                                    <Phone className="h-4 w-4 mr-1" />
+                                    <span className="text-sm">
+                                      {application.employer_contact}
+                                    </span>
+                                  </div>
+                                )}
+
+                                <div className="flex gap-2 mt-auto">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                                    onClick={() =>
+                                      handleMessageEmployer(application)
+                                    }
+                                  >
+                                    <MessageSquare className="h-4 w-4 mr-1" />
+                                    Message
+                                  </Button>
+
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-gray-600 border-gray-200 hover:bg-gray-50"
+                                    onClick={() =>
+                                      navigate(
+                                        `/dashboard/job/${application.job.id}`,
+                                      )
+                                    }
+                                  >
+                                    View Job
+                                  </Button>
                                 </div>
                               </div>
                             </div>
 
-                            <div className="mt-4 md:mt-0 md:text-right">
-                              <p className="text-sm text-gray-500">
-                                <Clock className="inline h-3 w-3 mr-1" />
-                                Applied{" "}
-                                {new Date(
-                                  application.created_at,
-                                ).toLocaleDateString()}
-                              </p>
-
-                              {application.interview_date && (
-                                <p className="text-sm text-purple-600 mt-1">
-                                  <Calendar className="inline h-3 w-3 mr-1" />
-                                  Interview:{" "}
-                                  {new Date(
-                                    application.interview_date,
-                                  ).toLocaleDateString()}
-                                </p>
-                              )}
-
-                              {application.employer_contact && (
-                                <p className="text-sm text-blue-600 mt-1">
-                                  <Phone className="inline h-3 w-3 mr-1" />
-                                  Contact: {application.employer_contact}
-                                </p>
-                              )}
-
-                              <div className="mt-3">
-                                <Button
-                                  size="sm"
-                                  className="bg-green-600 hover:bg-green-700 mr-2"
-                                >
-                                  <MessageSquare className="h-3 w-3 mr-1" />
-                                  Message
-                                </Button>
-                                <Button size="sm" variant="outline">
-                                  View Details
-                                </Button>
+                            {application.notes && (
+                              <div className="mt-3 pt-3 border-t border-gray-100">
+                                <div className="flex items-start">
+                                  <AlertCircle className="h-4 w-4 text-blue-500 mt-0.5 mr-2" />
+                                  <p className="text-sm text-gray-600">
+                                    {application.notes}
+                                  </p>
+                                </div>
                               </div>
-                            </div>
+                            )}
                           </div>
-
-                          {application.notes && (
-                            <div className="mt-3 pt-3 border-t border-gray-100">
-                              <p className="text-sm text-gray-600">
-                                <span className="font-medium">Notes:</span>{" "}
-                                {application.notes}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <div className="mx-auto w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-                      <AlertCircle className="h-8 w-8 text-gray-400" />
+                        ))}
                     </div>
-                    <h3 className="text-lg font-medium">
-                      No {status} applications
-                    </h3>
-                    <p className="text-gray-500 mt-1 mb-6">
-                      {searchTerm
-                        ? `No ${status} applications match "${searchTerm}". Try a different search term.`
-                        : `You don't have any applications with ${status} status.`}
-                    </p>
-                  </div>
-                )}
-              </TabsContent>
-            ))}
+                  ) : (
+                    <div className="text-center py-10">
+                      <FileText className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-1">
+                        No {status} applications
+                      </h3>
+                      <p className="text-gray-500 mb-4">
+                        You don't have any applications with {status} status.
+                      </p>
+                      <Button onClick={() => navigate("/dashboard/find-jobs")}>
+                        Find Jobs
+                      </Button>
+                    </div>
+                  )}
+                </TabsContent>
+              ),
+            )}
           </Tabs>
         </CardContent>
       </Card>

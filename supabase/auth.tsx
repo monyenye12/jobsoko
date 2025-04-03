@@ -17,6 +17,22 @@ type UserProfile = {
   avatar?: string;
   rating?: number;
   verified?: boolean;
+  education?: {
+    institution: string;
+    degree: string;
+    fieldOfStudy: string;
+    startDate: string;
+    endDate?: string;
+    stillStudying?: boolean;
+    description?: string;
+  }[];
+  bio?: string;
+  hourlyRate?: number;
+  dateOfBirth?: string;
+  city?: string;
+  state?: string;
+  profilePhotoUrl?: string;
+  darkMode?: boolean;
 };
 
 type AuthContextType = {
@@ -27,6 +43,7 @@ type AuthContextType = {
   signUp: (email: string, password: string, userData: any) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
+  toggleDarkMode: () => Promise<boolean>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -65,6 +82,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserProfile = async (userId: string) => {
     try {
+      console.log("Fetching user profile for ID:", userId);
+
+      // First, check if the user exists in the users table
       const { data, error } = await supabase
         .from("users")
         .select("*")
@@ -79,18 +99,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!data) {
         console.error("No user data found for ID:", userId);
+
+        // If no user data found, try to get role from auth metadata as fallback
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData && userData.user && userData.user.user_metadata) {
+          const role = userData.user.user_metadata.role || "job_seeker";
+          console.log("Using role from auth metadata:", role);
+
+          // Create a user record if it doesn't exist
+          const { error: insertError } = await supabase.from("users").insert([
+            {
+              id: userId,
+              email: userData.user.email,
+              full_name: userData.user.user_metadata.full_name || "",
+              role: role,
+              created_at: new Date().toISOString(),
+              verified: false,
+              rating: 0,
+            },
+          ]);
+
+          if (insertError) {
+            console.error("Error creating missing user profile:", insertError);
+          } else {
+            console.log("Created missing user profile with role:", role);
+
+            // Set basic profile with role from auth metadata
+            setUserProfile({
+              role: role as UserRole,
+              fullName: userData.user.user_metadata.full_name || "",
+              verified: false,
+              rating: 0,
+            });
+          }
+        }
+
         setLoading(false);
         return;
       }
 
       // Always use the role from the database, ignore localStorage
       const userRole = data.role || "job_seeker";
+      console.log("User role from database:", userRole);
 
       // Clear any stored role to prevent conflicts
       localStorage.removeItem("userRole");
 
       setUserProfile({
-        role: userRole,
+        role: userRole as UserRole,
         fullName: data.full_name || "",
         phone: data.phone || "",
         location: data.location || "",
@@ -101,6 +157,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         avatar: data.avatar_url || "",
         rating: data.rating || 0,
         verified: data.verified || false,
+        education: data.education || [],
+        bio: data.bio || "",
+        hourlyRate: data.hourly_rate || null,
+        dateOfBirth: data.date_of_birth || null,
+        city: data.city || "",
+        state: data.state || "",
+        profilePhotoUrl: data.profile_photo_url || "",
+        darkMode: data.dark_mode || false,
       });
 
       console.log("User profile set with role from database:", userRole);
@@ -115,13 +179,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log("Starting signup process with data:", { email, userData });
 
     try {
+      // Ensure role is one of the valid types
+      const role = userData.role === "employer" ? "employer" : "job_seeker";
+      console.log("Using role:", role);
+
       const { error, data } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             full_name: userData.fullName,
-            role: userData.role,
+            role: role, // Use validated role
           },
           emailRedirectTo: `${window.location.origin}/login?verified=true`,
         },
@@ -137,13 +205,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data.user) {
         try {
           // Create user profile in the users table with only essential fields
-          console.log("Creating user profile in database");
+          console.log("Creating user profile in database with role:", role);
           const { error: profileError } = await supabase.from("users").insert([
             {
               id: data.user.id,
               email: email,
               full_name: userData.fullName,
-              role: userData.role,
+              role: role, // Use validated role
               phone: userData.phone || null,
               location: userData.location || null,
               created_at: new Date().toISOString(),
@@ -161,7 +229,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // After successful profile creation, update with additional fields if needed
           if (
-            userData.role === "job_seeker" &&
+            role === "job_seeker" &&
             (userData.skills || userData.preferredCategory)
           ) {
             await supabase
@@ -172,7 +240,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               })
               .eq("id", data.user.id);
           } else if (
-            userData.role === "employer" &&
+            role === "employer" &&
             (userData.businessName || userData.businessType)
           ) {
             await supabase
@@ -184,7 +252,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               .eq("id", data.user.id);
           }
 
-          console.log("User profile created successfully");
+          console.log("User profile created successfully with role:", role);
         } catch (err: any) {
           console.error("Error in profile creation:", err);
           throw new Error(`Profile creation failed: ${err.message}`);
@@ -200,11 +268,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
+    console.log("Signing in user with email:", email);
     const { error, data } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     if (error) throw error;
+
+    console.log("Sign in successful, user:", data.user?.id);
 
     // Fetch user profile immediately after sign in to ensure role is set correctly
     if (data.user) {
@@ -238,6 +309,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         business_name: data.businessName,
         business_type: data.businessType,
         avatar_url: data.avatar,
+        education: data.education,
+        bio: data.bio,
+        hourly_rate: data.hourlyRate,
+        date_of_birth: data.dateOfBirth,
+        city: data.city,
+        state: data.state,
+        profile_photo_url: data.profilePhotoUrl,
+        dark_mode: data.darkMode,
         updated_at: new Date().toISOString(),
       })
       .eq("id", user.id);
@@ -247,6 +326,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Update local state
     setUserProfile((prev) => (prev ? { ...prev, ...data } : null));
   };
+
+  const toggleDarkMode = async () => {
+    try {
+      if (!user || !userProfile) throw new Error("User not authenticated");
+
+      const newDarkMode = !userProfile.darkMode;
+      console.log("Toggling dark mode to:", newDarkMode);
+
+      // Apply dark mode to document immediately for better UX
+      if (newDarkMode) {
+        document.documentElement.classList.add("dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+      }
+
+      // Update local state immediately
+      setUserProfile((prev) =>
+        prev ? { ...prev, darkMode: newDarkMode } : null,
+      );
+
+      // Then update in database
+      await supabase
+        .from("users")
+        .update({
+          dark_mode: newDarkMode,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      console.log("Dark mode updated successfully to:", newDarkMode);
+      return newDarkMode;
+    } catch (error) {
+      console.error("Error toggling dark mode:", error);
+      return userProfile?.darkMode || false;
+    }
+  };
+
+  // Apply dark mode on initial load
+  useEffect(() => {
+    if (userProfile?.darkMode) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [userProfile?.darkMode]);
 
   return (
     <AuthContext.Provider
@@ -258,6 +382,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signUp,
         signOut,
         updateProfile,
+        toggleDarkMode,
       }}
     >
       {children}

@@ -29,6 +29,8 @@ const Dashboard = () => {
     const path = location.pathname;
     const isEmployerUser = userProfile?.role === "employer";
 
+    console.log("Dashboard - Current user role:", userProfile?.role);
+
     if (path.includes("/applicants")) {
       setActiveTab("applicants");
       setActiveSidebarItem("Applicants");
@@ -53,6 +55,33 @@ const Dashboard = () => {
     }
   }, [location, userProfile]); // Added userProfile as dependency
 
+  // Redirect based on user role when dashboard first loads
+  useEffect(() => {
+    if (userProfile && !authLoading) {
+      console.log("Dashboard - Checking role for redirect:", userProfile.role);
+
+      // If we're on the main dashboard page and not a specific tab
+      if (location.pathname === "/dashboard") {
+        if (userProfile.role === "employer") {
+          console.log(
+            "Dashboard - User is employer, staying on employer dashboard",
+          );
+          // Already on the right dashboard, no redirect needed
+        } else if (userProfile.role === "job_seeker") {
+          console.log(
+            "Dashboard - User is job seeker, staying on job seeker dashboard",
+          );
+          // Already on the right dashboard, no redirect needed
+        } else {
+          console.log(
+            "Dashboard - Unknown role, defaulting to job seeker dashboard",
+          );
+          // Default to job seeker if role is unknown
+        }
+      }
+    }
+  }, [userProfile, authLoading, location.pathname, navigate]);
+
   // Function to trigger loading state for demonstration
   const handleRefresh = () => {
     setLoading(true);
@@ -73,7 +102,7 @@ const Dashboard = () => {
   const isEmployer = userProfile?.role === "employer";
 
   return (
-    <div className="min-h-screen bg-[#f5f5f7]">
+    <div className="min-h-screen bg-[#f5f5f7] dark:bg-gray-950">
       <TopNavigation />
       <div className="flex h-[calc(100vh-64px)] mt-16">
         <Sidebar
@@ -82,13 +111,16 @@ const Dashboard = () => {
         />
         <main className="flex-1 overflow-auto">
           <div className="container mx-auto px-6 pt-4 pb-2 flex justify-between items-center">
-            <h1 className="text-2xl font-semibold text-gray-900">
+            <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
               {isEmployer ? "Employer Dashboard" : "Job Seeker Dashboard"}
             </h1>
             <div className="flex gap-2">
               {isEmployer && (
                 <Button
-                  onClick={() => navigate("/post-job")}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigate("/post-job");
+                  }}
                   className="bg-green-600 hover:bg-green-700 text-white rounded-full px-4 h-9 shadow-sm transition-colors flex items-center gap-2"
                 >
                   <PlusCircle className="h-4 w-4" />
@@ -113,7 +145,7 @@ const Dashboard = () => {
               className="container mx-auto px-6"
               onValueChange={setActiveTab}
             >
-              <TabsList className="mb-4 bg-white border border-gray-200 p-1 rounded-lg">
+              <TabsList className="mb-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-1 rounded-lg">
                 <TabsTrigger
                   value="dashboard"
                   onClick={() => navigate("/dashboard")}
@@ -162,7 +194,7 @@ const Dashboard = () => {
               className="container mx-auto px-6"
               onValueChange={setActiveTab}
             >
-              <TabsList className="mb-4 bg-white border border-gray-200 p-1 rounded-lg">
+              <TabsList className="mb-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-1 rounded-lg">
                 <TabsTrigger
                   value="dashboard"
                   onClick={() => navigate("/dashboard")}
